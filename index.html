@@ -401,12 +401,19 @@
             const badge = document.getElementById('qualityBadge');
             const tip = document.getElementById('shutterTip');
 
-            function processFrame() {
+            let lastDetectionAt = 0;
+            function processFrame(timestamp) {
                 if (video.paused || video.ended || !videoStream) return;
+                animFrameId = requestAnimationFrame(processFrame);
+                // 輪郭検出は約10回/秒で十分。60回/秒のCPU処理を避ける。
+                if (timestamp - lastDetectionAt < 100) return;
+                lastDetectionAt = timestamp;
                 const vw = video.videoWidth, vh = video.videoHeight;
-                if (!vw || !vh) { animFrameId = requestAnimationFrame(processFrame); return; }
+                if (!vw || !vh) return;
 
-                overlay.width = vw; overlay.height = vh;
+                if (overlay.width !== vw || overlay.height !== vh) {
+                    overlay.width = vw; overlay.height = vh;
+                }
                 ctx.clearRect(0, 0, vw, vh);
 
                 const sw = 180, sh = Math.round((vh / vw) * sw);
@@ -439,7 +446,6 @@
                     badge.className = "bg-slate-700 text-slate-200 font-bold px-3.5 py-1.5 rounded-full text-xs shadow";
                     tip.textContent = "四隅がはっきり映るように調整してください";
                 }
-                animFrameId = requestAnimationFrame(processFrame);
             }
             animFrameId = requestAnimationFrame(processFrame);
         }
@@ -520,6 +526,30 @@
 
         function warpAndOptimizeReceipt(srcCanvas, pts) {
             const outW = 640, outH = 900;
+            // 現在の輪郭検出は軸に平行な矩形だけを返すため、
+            // その場合はブラウザの高速な画像描画を使用する。
+            // 将来的に四角形の台形補正が入った場合は従来の処理へフォールバック。
+            const rectangle =
+                Math.abs(pts[0].y - pts[1].y) < 1 &&
+                Math.abs(pts[2].y - pts[3].y) < 1 &&
+                Math.abs(pts[0].x - pts[3].x) < 1 &&
+                Math.abs(pts[1].x - pts[2].x) < 1;
+            if (rectangle) {
+                const x = Math.max(0, Math.min(pts[0].x, pts[3].x));
+                const y = Math.max(0, Math.min(pts[0].y, pts[1].y));
+                const right = Math.min(srcCanvas.width, Math.max(pts[1].x, pts[2].x));
+                const bottom = Math.min(srcCanvas.height, Math.max(pts[2].y, pts[3].y));
+                const croppedW = right - x, croppedH = bottom - y;
+                if (croppedW > 1 && croppedH > 1) {
+                    const fastCanvas = document.createElement('canvas');
+                    fastCanvas.width = outW; fastCanvas.height = outH;
+                    const fastCtx = fastCanvas.getContext('2d');
+                    fastCtx.imageSmoothingEnabled = true;
+                    fastCtx.imageSmoothingQuality = 'high';
+                    fastCtx.drawImage(srcCanvas, x, y, croppedW, croppedH, 0, 0, outW, outH);
+                    return fastCanvas.toDataURL('image/jpeg', 0.85);
+                }
+            }
             const dstPts = [{x:0,y:0},{x:outW-1,y:0},{x:outW-1,y:outH-1},{x:0,y:outH-1}];
             const H = computeHomography(dstPts, pts);
             const sData = srcCanvas.getContext('2d').getImageData(0, 0, srcCanvas.width, srcCanvas.height).data;
@@ -600,30 +630,60 @@
         function clearImages() { receiptImages = []; updateThumbnailUI(); }
 
         // AI OCR解析実行 (長尺結合or通常モード対応 ＆ 軽減税率分離対応)
+        let analysisInProgress = false;
         async function analyzeReceipts() {
-            if (receiptImages.length === 0) return;
+            if (receiptImages.length === 0 || analysisInProgress) return;
+            analysisInProgress = true;
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = true;
             document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "AI高速OCR解析 ＆ 軽減税率分離中...";
-
+            document.getElementById('loadingText').textContent = "AI解析中...（画像はエラー時も保持します）";
+            const started = performance.now();
+            // 解析中に新たな画像が届いても、今回の解析対象のみを削除する。
+            const submitted = receiptImages.slice();
+            const submittedMode = captureMode;
             try {
+                const body = JSON.stringify({ images: submitted, mode: submittedMode });
+                const bodyBytes = new Blob([body]).size;
+                // Vercel Functions全体の4.5MB制限に対し安全側で事前停止。
+                if (bodyBytes > 3.8 * 1024 * 1024) {
+                    throw new Error('画像の合計サイズが大きすぎます（' + (bodyBytes/1024/1024).toFixed(1) + 'MB）。枚数を減らして再実行してください。');
+                }
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ images: receiptImages, mode: captureMode })
+                    body
                 });
-                const resJson = await response.json();
-                if (!response.ok) throw new Error(resJson.error || '解析失敗');
-
-                if (Array.isArray(resJson)) {
-                    resJson.forEach(item => receiptsData.unshift(item));
-                } else {
-                    receiptsData.unshift(resJson);
+                const rawText = await response.text();
+                let resJson = null;
+                try { resJson = JSON.parse(rawText); } catch (_) { /* HTMLやプレーンテキストにも対処する */ }
+                if (!response.ok) {
+                    const code = rawText.match(/\b(?:FUNCTION|INTERNAL_FUNCTION)_[A-Z_]+\b/)?.[0];
+                    const advice = response.status === 413 ? '画像送信サイズを減らしてください。'
+                        : response.status === 504 ? 'Vercel側のタイムアウトが疑われます。'
+                        : response.status === 429 ? 'AIの利用制限が疑われます。'
+                        : 'Vercelの実行ログで /api/analyze を確認してください。';
+                    throw new Error('HTTP ' + response.status + (code ? ' (' + code + ')' : '') + ': ' + (resJson?.error || advice));
                 }
+                if (!resJson || (!Array.isArray(resJson) && typeof resJson !== 'object')) {
+                    throw new Error('APIがJSON以外の応答を返しました（HTTP ' + response.status + '）。Vercelログを確認してください。');
+                }
+                const items = Array.isArray(resJson) ? resJson : [resJson];
+                items.forEach(item => receiptsData.unshift(item));
                 renderTable();
-                clearImages();
+                // 解析中に届いた新しいレシートは残す（重複する文字列画像を1件だけ削除）。
+                for (const img of submitted) {
+                    const idx = receiptImages.indexOf(img);
+                    if (idx !== -1) receiptImages.splice(idx, 1);
+                }
+                updateThumbnailUI();
+                console.info('[OCR] success', { images: submitted.length, bytes: bodyBytes, elapsedMs: Math.round(performance.now()-started) });
             } catch (err) {
-                alert('エラー: ' + err.message);
+                console.warn('[OCR] failed', { images: submitted.length, elapsedMs: Math.round(performance.now()-started), message: err.message });
+                alert('OCR解析エラー: ' + err.message + '\n撮影画像は残っていますので、原因確認後に再実行できます。');
             } finally {
+                analysisInProgress = false;
+                btn.disabled = receiptImages.length === 0;
                 document.getElementById('loadingModal').classList.add('hidden');
             }
         }
