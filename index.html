@@ -47,7 +47,7 @@
                 </div>
             </div>
         </div>
-        <p class="text-center text-xs text-slate-500 py-4">OCR解析やCSV出力はPC側の画面で行ってください</p>
+        <p class="text-center text-xs text-slate-500 py-4">一括解析の実行やCSV出力はPC側の画面で行ってください</p>
     </div>
 
     <!-- 💻 PCメイン管理画面 -->
@@ -60,7 +60,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (台形補正完全版)</span>
+                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (一貫蓄積・一括解析)</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -76,14 +76,15 @@
         </header>
 
         <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+            <!-- 撮影・蓄積セクション -->
             <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-6">
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-semibold flex items-center space-x-2">
                             <i class="fa-solid fa-camera text-indigo-400"></i>
-                            <span>スマホカメラ連携 ＆ 台形補正フラット切り抜き</span>
+                            <span>レシートを貯めて一括AI解析</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">レシートの四隅だけが横幅いっぱいに真っ直ぐ引き伸ばされて保存されます。</p>
+                        <p class="text-xs text-slate-400 mt-1">スマホやカメラで何枚も撮影してストックし、最後に「一括AI解析を実行する」を押すとバーッとデータ化されます。</p>
                     </div>
                     <div class="flex items-center space-x-2 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
                         <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white">
@@ -108,26 +109,28 @@
                         </div>
                     </div>
 
+                    <!-- ストックされた画像一覧 -->
                     <div class="md:col-span-2 bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
                         <div class="flex justify-between items-center">
                             <p class="text-sm font-medium text-indigo-300">
-                                <i class="fa-solid fa-images mr-1"></i> スキャン済み画像一覧 (<span id="imageCount">0</span>枚)
+                                <i class="fa-solid fa-images mr-1"></i> ストック中の画像 (<span id="imageCount">0</span>枚)
                                 <span id="modeStatusTag" class="text-[10px] bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-800 ml-2">通常モード</span>
                             </p>
                             <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
                         </div>
 
                         <div id="thumbnailContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto p-2 bg-black/40 rounded-lg min-h-[160px]">
-                            <p class="col-span-full text-center text-xs text-slate-500 py-14">スマホで撮影すると、ここに台形補正済みレシートが自動追加されます</p>
+                            <p class="col-span-full text-center text-xs text-slate-500 py-14">撮影したレシートがここにストックされます</p>
                         </div>
 
                         <button onclick="analyzeReceipts()" id="analyzeBtn" disabled class="w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed">
-                            <i class="fa-solid fa-brain"></i><span>AI自動OCR解析を実行する</span>
+                            <i class="fa-solid fa-brain"></i><span>ストックしたレシートを一括AI解析する</span>
                         </button>
                     </div>
                 </div>
             </section>
 
+            <!-- 読み取り結果一覧テーブル -->
             <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
                 <div class="flex flex-wrap justify-between items-center gap-4">
                     <div>
@@ -219,10 +222,13 @@
         </div>
     </div>
 
-    <!-- ローディングモーダル (確実に解除される安全設計) -->
-    <div id="loadingModal" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center p-4 z-50 space-y-4">
-        <div class="animate-spin rounded-full h-16 w-16 border-4 border-blue-500 border-t-transparent"></div>
-        <p class="text-lg font-medium text-blue-300" id="loadingText">処理中...</p>
+    <!-- くるくる回るスピナー付きローディングモーダル（一括解析中表示） -->
+    <div id="loadingModal" class="hidden fixed inset-0 bg-black/85 flex flex-col items-center justify-center p-4 z-50 space-y-6">
+        <div class="animate-spin rounded-full h-20 w-20 border-4 border-indigo-500 border-t-transparent shadow-[0_0_30px_rgba(99,102,241,0.5)]"></div>
+        <div class="text-center space-y-2">
+            <p class="text-xl font-bold text-indigo-300" id="loadingText">AIが一括解析中...</p>
+            <p class="text-xs text-slate-400">ストックされたレシートを読み込んでいます。そのままお待ちください。</p>
+        </div>
     </div>
 
     <script>
@@ -282,7 +288,7 @@
             if (mode === 'normal') {
                 btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
                 btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
-                tag.textContent = "通常モード (1枚ずつ解析)";
+                tag.textContent = "通常モード (1枚ずつ)";
             } else {
                 btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
                 btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
@@ -478,29 +484,22 @@
             const srcPts = normCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
 
             closeLiveCamera();
-            document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "台形補正・フラット化中...";
-
-            setTimeout(() => {
-                const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
-                if (isMobileRemote) {
-                    if (activeConnection && activeConnection.open) {
-                        activeConnection.send({ type: 'NEW_RECEIPT_IMAGE', image: flattened });
-                        mobileSentCounter++;
-                        document.getElementById('mobileSentCount').textContent = `送信済: ${mobileSentCounter}枚`;
-                    }
-                    document.getElementById('mobileLastPreview').innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
-                } else {
-                    receiptImages.push(flattened);
-                    updateThumbnailUI();
+            
+            // 撮影直後のトースト通知風演出（スムーズにストックに加わる）
+            const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
+            if (isMobileRemote) {
+                if (activeConnection && activeConnection.open) {
+                    activeConnection.send({ type: 'NEW_RECEIPT_IMAGE', image: flattened });
+                    mobileSentCounter++;
+                    document.getElementById('mobileSentCount').textContent = `送信済: ${mobileSentCounter}枚`;
                 }
-                document.getElementById('loadingModal').classList.add('hidden');
-            }, 50);
+                document.getElementById('mobileLastPreview').innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
+            } else {
+                receiptImages.push(flattened);
+                updateThumbnailUI();
+            }
         }
 
-        // =========================================================================
-        // 本物のホモグラフィ射影変換（四隅だけを横幅いっぱいに真っ直ぐ引き伸ばして切り抜く）
-        // =========================================================================
         function warpAndOptimizeReceipt(srcCanvas, pts) {
             const topW = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
             const bottomW = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
@@ -618,7 +617,7 @@
             const container = document.getElementById('thumbnailContainer');
             document.getElementById('imageCount').textContent = receiptImages.length;
             if (receiptImages.length === 0) {
-                container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">スマホで撮影すると、ここに自動追加されます</p>`;
+                container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">撮影したレシートがここにストックされます</p>`;
                 document.getElementById('analyzeBtn').disabled = true;
                 document.getElementById('analyzeBtn').className = "w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed";
                 return;
@@ -629,7 +628,7 @@
                         <img src="${img}" class="w-full h-auto block">
                     </div>
                     <div class="bg-slate-800 px-3 py-1.5 flex justify-between items-center border-t border-slate-700">
-                        <span class="text-xs font-medium text-indigo-300">#${idx+1} (台形補正済・横幅最大)</span>
+                        <span class="text-xs font-medium text-indigo-300">#${idx+1} ストック中</span>
                         <button onclick="removeImage(${idx})" class="bg-red-600 hover:bg-red-500 text-white rounded-md px-2 py-0.5 text-xs font-bold">削除</button>
                     </div>
                 </div>
@@ -641,11 +640,13 @@
         function removeImage(idx) { receiptImages.splice(idx, 1); updateThumbnailUI(); }
         function clearImages() { receiptImages = []; updateThumbnailUI(); }
 
-        // AI OCR解析実行 (try...finally でローディングフリーズを100%防止)
+        // 一括AI解析実行（スピナー付きローディング ＆ バーッと結果追加）
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
-            document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "AI高速OCR解析 ＆ 軽減税率分離中...";
+            const loadingModal = document.getElementById('loadingModal');
+            const loadingText = document.getElementById('loadingText');
+            loadingModal.classList.remove('hidden');
+            loadingText.textContent = `ストックされた ${receiptImages.length}件 のレシートを一括AI解析中...`;
 
             try {
                 const response = await fetch('/api/analyze', {
@@ -666,8 +667,7 @@
             } catch (err) {
                 alert('エラー: ' + err.message);
             } finally {
-                // 万が一エラーが起きても確実にローディングモーダルを消す安全設計
-                document.getElementById('loadingModal').classList.add('hidden');
+                loadingModal.classList.add('hidden');
             }
         }
 
