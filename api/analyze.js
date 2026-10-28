@@ -3,7 +3,6 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // APIキーの前後の空白やダブルクォーテーションを自動で綺麗に除去する安全対策
     let apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
         return res.status(500).json({ error: 'サーバーにGemini APIキーが設定されていません。' });
@@ -26,7 +25,7 @@ export default async function handler(req, res) {
 
         const parts = [
             { 
-                text: "これらは自動台形補正・フラット化された1枚の長いレシート（分割画像含む）、または複数のレシート画像です。これら全体を統合して1つの取引として扱い、以下のJSON形式のみ（余計な文字やマークダウン不要）でデータを抽出してください：{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 合計金額の数値, \"tax\": 消費税額の数値(不明なら0), \"category\": \"勘定科目(消耗品費、旅費交通費、接待交際費、会議費などから適切に選択)\"}" 
+                text: "フラット補正されたレシート画像（複数枚の場合は1つの長尺レシートとして統合）から取引データを抽出し、以下のJSON形式のみで出力してください：{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 税込合計金額の数値, \"tax\": 消費税額の数値(不明なら0), \"category\": \"勘定科目(消耗品費、旅費交通費、接待交際費、会議費、通信費などから選択)\"}" 
             }
         ];
 
@@ -42,12 +41,15 @@ export default async function handler(req, res) {
             }
         }
 
-        // 最新の推奨モデルへアップデート
         const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{ parts: parts }]
+                contents: [{ parts: parts }],
+                generationConfig: {
+                    temperature: 0.1,
+                    responseMimeType: "application/json"
+                }
             })
         });
 
