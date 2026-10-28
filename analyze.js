@@ -56,9 +56,12 @@ export default async function handler(req, res) {
         upstream = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-            body: JSON.stringify({ contents: [{ parts }], generationConfig })
+            body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+            signal: AbortSignal.timeout(90000)
         });
     } catch (e) {
+        if (e?.name === 'TimeoutError' || e?.name === 'AbortError')
+            return fail(504, 'GEMINI_TIMEOUT', 'AI解析が90秒を超えたため中断しました。画像は保持されています。');
         return fail(502, 'GEMINI_NETWORK_ERROR', 'AIへの接続に失敗しました。時間をおいて再試行してください');
     }
     lastProviderStatus = upstream.status;

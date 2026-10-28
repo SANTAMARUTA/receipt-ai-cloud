@@ -24,7 +24,7 @@
                         <p id="mobileConnStatus" class="text-xs text-amber-400 mt-0.5">🔄 PCへ接続しています...</p>
                     </div>
                 </div>
-                <span id="mobileSentCount" class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
+                <span id="mobileSentCount" class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-3 py-1 rounded-full text-xs font-bold">PC受信確認: 0枚</span>
             </div>
 
             <!-- 撮影モード切り替え（通常 / 長尺結合） -->
@@ -35,12 +35,17 @@
                 </button>
             </div>
 
-            <button onclick="openLiveCamera()" class="w-full py-10 bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition rounded-2xl shadow-2xl flex flex-col items-center justify-center space-y-3 border-2 border-indigo-400">
+            <button id="mobileCaptureBtn" onclick="openLiveCamera()" disabled class="w-full py-10 bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition rounded-2xl shadow-2xl flex flex-col items-center justify-center space-y-3 border-2 border-indigo-400">
                 <i class="fa-solid fa-camera text-5xl text-white"></i>
                 <span class="text-xl font-bold text-white tracking-wide">カメラを起動して撮影</span>
                 <span id="mobileModeSubLabel" class="text-xs text-indigo-200">フラット切り抜きされPCへ自動転送されます</span>
             </button>
 
+            <div class="bg-slate-900 border border-amber-900/70 rounded-2xl p-3 space-y-2">
+                <p id="mobilePendingStatus" aria-live="polite" class="text-xs text-amber-300">PCへの受信確認待ち: 0枚</p>
+                <button id="mobileResendBtn" onclick="resendUnconfirmedCaptures()" disabled class="w-full bg-amber-700 text-white text-xs py-2 rounded-lg font-bold disabled:opacity-40">受信未確認の写真を再送</button>
+                <p class="text-[11px] text-slate-400">PCが受信確認を返すまで「送信完了」にはなりません。未確認画像は端末内に一時保持します。</p>
+            </div>
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
                 <p class="text-xs font-semibold text-slate-400">直前にPCへ転送したレシート確認</p>
                 <div id="mobileLastPreview" class="bg-black/50 rounded-xl min-h-[140px] max-h-52 overflow-y-auto flex items-center justify-center p-2">
@@ -190,7 +195,7 @@
 
         <div class="flex flex-col items-center justify-center space-y-2 py-5 px-4 z-20 bg-black/80 backdrop-blur">
             <p class="text-xs text-slate-300 text-center" id="shutterTip">レシート全体が映るようにカメラを向けてください</p>
-            <button onclick="takeSnapshot()" class="w-20 h-20 bg-white rounded-full border-4 border-blue-500 flex items-center justify-center shadow-2xl active:scale-95 transition">
+            <button id="shutterBtn" onclick="takeSnapshot()" disabled class="w-20 h-20 bg-white rounded-full border-4 border-blue-500 flex items-center justify-center shadow-2xl active:scale-95 transition">
                 <div class="w-16 h-16 bg-blue-600 rounded-full"></div>
             </button>
         </div>
@@ -262,10 +267,216 @@
         let peer = null;
         let activeConnection = null;
         let isMobileRemote = false;
-        let roomId = generateSecureRoomId();
+        function getOrCreatePcRoomId() {
+            // 同じPCタブを更新してもQRルームが変わらないようにする。
+            try {
+                const key = 'TRAUM_RECEIPT_PC_ROOM_V2';
+                const oldRoom = sessionStorage.getItem(key);
+                if (oldRoom && /^rcpt-[a-z0-9-]+$/i.test(oldRoom)) return oldRoom;
+                const fresh = generateSecureRoomId();
+                sessionStorage.setItem(key, fresh);
+                return fresh;
+            } catch (_) { return generateSecureRoomId(); }
+        }
+        let roomId = getOrCreatePcRoomId();
         let mobileSentCounter = 0;
 
-        window.addEventListener('DOMContentLoaded', () => {
+        // 受信確認(ACK)付き転送。PC未受信の写真は削除しない。
+        const PENDING_DB = 'TRAUM_Receipt_Transfer_v2';
+        const MAX_PENDING_CAPTURES = 12;
+        const ACK_WAIT_MS = 8000;
+        const MAX_ACK_SENDS = 3;
+        let mobileReady = false;
+        let mobileLinkMessage = 'PCへ接続しています...';
+        let reconnectTimer = null, handshakeTimer = null, heartbeatTimer = null;
+        let reconnectAttempt = 0, mobileConnectionEpoch = 0, lastPongAt = 0;
+        const pendingCaptures = new Map();
+        const receivedCaptureIds = new Set();
+        let modeChangePending = false;
+
+        function makeCaptureId() {
+            if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+            return String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+        }
+        function openPendingDatabase() {
+            return new Promise((resolve, reject) => {
+                if (typeof indexedDB === 'undefined') return reject(new Error('端末の一時保存機能がありません'));
+                const request = indexedDB.open(PENDING_DB, 1);
+                request.onupgradeneeded = () => {
+                    if (!request.result.objectStoreNames.contains('images')) {
+                        request.result.createObjectStore('images', { keyPath: 'id' });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error('IndexedDBに接続できません'));
+            });
+        }
+        async function persistPendingCapture(capture) {
+            const db = await openPendingDatabase();
+            try {
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction('images','readwrite');
+                    tx.objectStore('images').put({ id:capture.id, image:capture.image, mode:capture.mode, room:capture.room, createdAt:capture.createdAt });
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error || new Error('写真を端末へ一時保存できません'));
+                    tx.onabort = () => reject(tx.error || new Error('写真の一時保存が中断しました'));
+                });
+            } finally { db.close(); }
+        }
+        async function removePersistedCapture(id) {
+            try {
+                const db = await openPendingDatabase();
+                try {
+                    await new Promise((resolve,reject)=>{
+                        const tx = db.transaction('images','readwrite');
+                        tx.objectStore('images').delete(id);
+                        tx.oncomplete=()=>resolve();
+                        tx.onerror=()=>reject(tx.error || new Error('削除失敗'));
+                    });
+                } finally { db.close(); }
+            } catch (e) { console.warn('[TRANSFER] ACK受領後の端末キャッシュ削除失敗', e?.message); }
+        }
+        async function restorePendingCaptures() {
+            try {
+                const db = await openPendingDatabase();
+                let saved;
+                try {
+                    saved = await new Promise((resolve,reject)=>{
+                        const tx = db.transaction('images','readonly');
+                        const req = tx.objectStore('images').getAll();
+                        req.onsuccess=()=>resolve(req.result || []);
+                        req.onerror=()=>reject(req.error || new Error('復元失敗'));
+                    });
+                } finally { db.close(); }
+                // 新しいルームへの誤送信を防ぐため同じPCルームIDだけを復元。
+                for (const c of saved) {
+                    if (Date.now() - c.createdAt > 24 * 60 * 60 * 1000) { await removePersistedCapture(c.id); continue; }
+                    if(c.room !== roomId) continue;
+                    if (pendingCaptures.size >= MAX_PENDING_CAPTURES) break;
+                    pendingCaptures.set(c.id, { ...c, sendCount:0, ackTimer:null });
+                }
+            } catch (e) {
+                console.warn('[TRANSFER] 未送信データ復元不可',e?.message);
+                mobileLinkMessage='端末の一時保存が利用できません。画面を閉じずに撮影してください。';
+            }
+            renderMobileTransferStatus();
+        }
+        function updateMobileCaptureLock() {
+            if(!isMobileRemote) return;
+            const connected = mobileReady && Boolean(activeConnection?.open) && navigator.onLine !== false;
+            const canShoot = connected && !modeChangePending && pendingCaptures.size < MAX_PENDING_CAPTURES;
+            for(const id of ['mobileCaptureBtn','shutterBtn']) {
+                const el=document.getElementById(id);
+                if(!el)continue;
+                el.disabled=!canShoot;
+                el.classList.toggle('opacity-40',!canShoot);
+                el.classList.toggle('cursor-not-allowed',!canShoot);
+            }
+            const retry=document.getElementById('mobileResendBtn');
+            if(retry) retry.disabled = !connected || pendingCaptures.size===0;
+        }
+        function renderMobileTransferStatus() {
+            if(!isMobileRemote) return;
+            const count=pendingCaptures.size;
+            const status=document.getElementById('mobilePendingStatus');
+            if(status) status.textContent = count ? `PC受信未確認: ${count}枚（再接続後に自動再送）` : 'PC受信未確認: 0枚';
+            const sent=document.getElementById('mobileSentCount');
+            if(sent) sent.textContent=`PC受信確認: ${mobileSentCounter}枚`;
+            const info=document.getElementById('mobileConnStatus');
+            if(info){
+                info.textContent=(mobileReady?'✅ PCと接続完了':`⚠️ ${mobileLinkMessage}`) + (count ? `｜未確認${count}枚` : '');
+                info.className='text-xs font-bold mt-0.5 '+(mobileReady?'text-emerald-400':'text-amber-400');
+            }
+            updateMobileCaptureLock();
+        }
+        function setMobileLinkReady(ready, message) {
+            mobileReady=ready;
+            if(message)mobileLinkMessage=message;
+            renderMobileTransferStatus();
+        }
+        function cancelPendingAckTimers() {
+            for(const c of pendingCaptures.values()){
+                if(c.ackTimer)clearTimeout(c.ackTimer);
+                c.ackTimer=null;c.sendCount=0;
+            }
+        }
+        function trySendPendingCapture(id) {
+            const c=pendingCaptures.get(id);
+            if (!c || !mobileReady || !activeConnection?.open || c.ackTimer) return false;
+            if(c.sendCount>=MAX_ACK_SENDS){ renderMobileTransferStatus();return false; }
+            try {
+                activeConnection.send({type:'RECEIPT_IMAGE',id:c.id,image:c.image,mode:c.mode});
+            } catch (err) {
+                console.warn('[TRANSFER] 画像の送信処理失敗',err?.message);
+                setMobileLinkReady(false,'通信が切れました。再接続中です');
+                scheduleMobileReconnect('通信が切れました。再接続中です');
+                return false;
+            }
+            c.sendCount++;
+            c.ackTimer=setTimeout(()=>{
+                c.ackTimer=null;
+                if(!pendingCaptures.has(id))return;
+                if(c.sendCount<MAX_ACK_SENDS && mobileReady){
+                    trySendPendingCapture(id);
+                } else if(mobileReady){
+                    mobileLinkMessage='PCから受信確認がありません。再送ボタンを押してください';
+                    renderMobileTransferStatus();
+                }
+            },ACK_WAIT_MS);
+            return true;
+        }
+        function flushPendingCaptures() {
+            if(!mobileReady)return;
+            for(const id of pendingCaptures.keys()) trySendPendingCapture(id);
+            renderMobileTransferStatus();
+        }
+        function resendUnconfirmedCaptures() {
+            if(!mobileReady){renderMobileTransferStatus();return;}
+            for(const c of pendingCaptures.values()){
+                if(c.ackTimer)clearTimeout(c.ackTimer);
+                c.ackTimer=null;c.sendCount=0;
+            }
+            flushPendingCaptures();
+        }
+        function confirmCaptureReceived(id) {
+            const c=pendingCaptures.get(id);
+            if(!c)return;
+            if(c.ackTimer)clearTimeout(c.ackTimer);
+            pendingCaptures.delete(id);
+            mobileSentCounter++;
+            renderMobileTransferStatus();
+            removePersistedCapture(id);
+            console.info('[TRANSFER] PC受信確認',id);
+        }
+        function showMobilePreview(image, text) {
+            const el=document.getElementById('mobileLastPreview');
+            if(!el)return;
+            el.textContent='';
+            const img=document.createElement('img');
+            img.src=image;
+            img.className='w-full h-auto rounded border border-slate-700';
+            img.alt=text||'直前のレシート';
+            el.appendChild(img);
+        }
+        function markPcConnected(isConnected) {
+            const badge=document.getElementById('pcSyncBadge');
+            if(badge){
+                badge.textContent=isConnected?'✅ スマホカメラ接続中':'📱 スマホ未接続・再接続待ち';
+                badge.className='text-xs '+(isConnected?'text-emerald-400 bg-emerald-950 border-emerald-700':'text-amber-300 bg-slate-900 border-slate-700')+' px-2.5 py-0.5 rounded-full border font-bold';
+            }
+            const qr=document.getElementById('qrModalStatus');
+            if(qr)qr.textContent=isConnected?'✅ スマホと接続完了！':'⚠️ スマホの接続を確認してください';
+        }
+        function sendPcReply(conn,reply){
+            if(!conn?.open)return;
+            try{conn.send(reply);}catch(err){console.warn('[TRANSFER] PC返信失敗',err?.message);}
+        }
+        // PC側のモードをスマホへ通知する（画像一括解析時の混在を防ぐ）。
+        function syncModeToPhone() {
+            if(activeConnection?.open)sendPcReply(activeConnection,{type:'MODE_SYNC',mode:captureMode});
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
             const params = new URLSearchParams(window.location.search);
             const targetRoom = params.get('room');
             renderTable();
@@ -275,6 +486,7 @@
                 roomId = targetRoom;
                 document.getElementById('pcMainView').classList.add('hidden');
                 document.getElementById('mobileRemoteView').classList.remove('hidden');
+                await restorePendingCaptures();
                 initMobilePeer(targetRoom);
             } else {
                 isMobileRemote = false;
@@ -282,77 +494,198 @@
             }
         });
 
-        function setCaptureMode(mode) {
+        function setCaptureMode(mode, notifyPhone=true) {
+            if (mode !== 'normal' && mode !== 'long') return;
+            if (isMobileRemote) return;
+            if (receiptImages.length && mode!==captureMode) {
+                alert('撮影済み画像が残っています。誤結合を防ぐため、先にOCR解析または画像クリアを行ってください。');
+                syncModeToPhone();
+                return;
+            }
             captureMode = mode;
             const btnN = document.getElementById('modeBtnNormal');
             const btnL = document.getElementById('modeBtnLong');
             const tag = document.getElementById('modeStatusTag');
             if (mode === 'normal') {
-                btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
-                btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
-                tag.textContent = "通常モード (1枚ずつ解析)";
+                btnN.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white';
+                btnL.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white';
+                tag.textContent = '通常モード (1枚ずつ解析)';
             } else {
-                btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
-                btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
-                tag.textContent = "長尺レシート結合モード";
+                btnN.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white';
+                btnL.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white';
+                tag.textContent = '長尺レシート結合モード';
             }
+            if(notifyPhone)syncModeToPhone();
         }
 
         function toggleCaptureMode() {
-            captureMode = (captureMode === 'normal') ? 'long' : 'normal';
-            const lbl = document.getElementById('mobileModeLabel');
-            const sub = document.getElementById('mobileModeSubLabel');
-            if (captureMode === 'normal') {
-                lbl.textContent = "モード: 1枚ずつ通常撮影";
-                sub.textContent = "撮影された画像はそれぞれ独立した行として処理されます";
-            } else {
-                lbl.textContent = "モード: 長尺レシート結合";
-                sub.textContent = "複数枚撮るとまとめて1件のデータに統合されます";
-            }
-            alert("撮影モードを「" + (captureMode === 'normal' ? '通常モード' : '長尺結合モード') + "」に変更しました");
+            if(!isMobileRemote || !mobileReady){alert('PCとの接続を確認してから撮影モードを切り替えてください。');return;}
+            if(pendingCaptures.size){alert('PCで受信確認が終わるまで撮影モードを切り替えられません。');return;}
+            const next=captureMode==='normal'?'long':'normal';
+            modeChangePending=true;
+            captureMode=next;
+            renderMobileCaptureMode();
+            if(activeConnection?.open)activeConnection.send({type:'MODE_SET',mode:next});
         }
 
-        // P2P通信 (自動再接続機能つき)
-        function initPCPeer() {
-            if (typeof Peer === 'undefined') return;
-            peer = new Peer(roomId, {
-                config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
-            });
-            peer.on('connection', (conn) => {
-                activeConnection = conn;
-                document.getElementById('pcSyncBadge').textContent = "✅ スマホカメラ接続中";
-                document.getElementById('pcSyncBadge').className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
-                document.getElementById('qrModalStatus').textContent = "✅ スマホと接続完了！";
+        function renderMobileCaptureMode() {
+            const lbl=document.getElementById('mobileModeLabel');
+            const sub=document.getElementById('mobileModeSubLabel');
+            if(lbl) lbl.textContent = captureMode==='normal'?'モード: 1枚ずつ通常撮影':'モード: 長尺レシート結合';
+            if(sub) sub.textContent=captureMode==='normal'?'撮影された画像はそれぞれ独立して処理されます':'複数枚をまとめて1枚のレシートとして解析します';
+            updateMobileCaptureLock();
+        }
 
-                conn.on('data', (data) => {
-                    if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
+        // P2P通信 (ACK付き・自動再接続)
+        function initPCPeer() {
+            if (typeof Peer === 'undefined') {markPcConnected(false);return;}
+            peer = new Peer(roomId, {config:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]}});
+            peer.on('open',()=>markPcConnected(false));
+            peer.on('connection',conn=>{
+                if(activeConnection && activeConnection!==conn && activeConnection.open) activeConnection.close();
+                activeConnection=conn;
+                markPcConnected(false);
+                const announce=()=>sendPcReply(conn,{type:'PC_READY',mode:captureMode,protocol:2});
+                conn.on('open',()=>{if(activeConnection!==conn)return;markPcConnected(true);announce();});
+                conn.on('data',data=>{
+                    if(activeConnection!==conn || !data || typeof data!=='object')return;
+                    if(data.type==='HELLO'){announce();return;}
+                    if(data.type==='PING'){sendPcReply(conn,{type:'PONG'});return;}
+                    if(data.type==='MODE_SET'){
+                        const mode=data.mode;
+                        if(mode!=='normal' && mode!=='long')return;
+                        if(receiptImages.length && mode!==captureMode){
+                            sendPcReply(conn,{type:'MODE_REJECTED',mode:captureMode});
+                        }else{setCaptureMode(mode,false);syncModeToPhone();}
+                        return;
+                    }
+                    if((data.type==='RECEIPT_IMAGE' || data.type==='NEW_RECEIPT_IMAGE') && typeof data.image==='string'){
+                        const id=typeof data.id==='string' && /^[a-zA-Z0-9_-]{5,100}$/.test(data.id)?data.id:null;
+                        if(!data.image.startsWith('data:image/jpeg;base64,') || data.image.length>4*1024*1024){
+                            sendPcReply(conn,{type:'IMAGE_REJECTED',id,reason:'写真形式または容量が不正です'});return;
+                        }
+                        if(id && receivedCaptureIds.has(id)){
+                            sendPcReply(conn,{type:'RECEIPT_ACK',id});return;
+                        }
+                        if(receiptImages.length && data.mode && captureMode!==data.mode){
+                            sendPcReply(conn,{type:'IMAGE_REJECTED',id,reason:'PC側の撮影モードと異なります'});return;
+                        }
+                        if(data.mode==='normal' || data.mode==='long')setCaptureMode(data.mode,false);
                         receiptImages.push(data.image);
+                        if(id){
+                            receivedCaptureIds.add(id);
+                            if(receivedCaptureIds.size>1500)receivedCaptureIds.delete(receivedCaptureIds.values().next().value);
+                        }
                         updateThumbnailUI();
+                        if(id)sendPcReply(conn,{type:'RECEIPT_ACK',id});
                     }
                 });
+                conn.on('close',()=>{if(activeConnection===conn){activeConnection=null;markPcConnected(false);}});
+                conn.on('error',()=>{if(activeConnection===conn){activeConnection=null;markPcConnected(false);}});
             });
+            peer.on('disconnected',()=>{
+                markPcConnected(false);
+                try{if(!peer.destroyed)peer.reconnect();}catch(e){console.warn('[TRANSFER] PC再接続失敗',e?.message);}
+            });
+            peer.on('error',e=>{markPcConnected(false);console.warn('[TRANSFER] PC Peerエラー',e?.message);});
         }
 
         function initMobilePeer(targetRoomId) {
-            const statusEl = document.getElementById('mobileConnStatus');
-            if (typeof Peer === 'undefined') return;
-
-            function connect() {
-                peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
-                peer.on('open', () => {
-                    const conn = peer.connect(targetRoomId, { reliable: true });
-                    conn.on('open', () => {
-                        activeConnection = conn;
-                        statusEl.textContent = "✅ PCと接続完了！";
-                        statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
+            if(typeof Peer==='undefined'){setMobileLinkReady(false,'通信ライブラリを読み込めません');return;}
+            roomId=targetRoomId;
+            setMobileLinkReady(false,'PCへ接続しています...');
+            function connectMobilePeer() {
+                if(navigator.onLine===false){scheduleMobileReconnect('ネットワークがオフラインです');return;}
+                const epoch=++mobileConnectionEpoch;
+                if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+                if(handshakeTimer){clearTimeout(handshakeTimer);handshakeTimer=null;}
+                if(heartbeatTimer){clearInterval(heartbeatTimer);heartbeatTimer=null;}
+                const previous=peer;
+                activeConnection=null;
+                mobileReady=false;
+                if(previous){try{previous.destroy();}catch(_){}}
+                renderMobileTransferStatus();
+                peer=new Peer({config:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]}});
+                const currentPeer=peer;
+                peer.on('open',()=>{
+                    if(epoch!==mobileConnectionEpoch)return;
+                    const conn=currentPeer.connect(roomId,{reliable:true});
+                    activeConnection=conn;
+                    conn.on('open',()=>{
+                        if(epoch!==mobileConnectionEpoch)return;
+                        setMobileLinkReady(false,'PCの応答を確認しています...');
+                        try{conn.send({type:'HELLO',protocol:2});}catch(_){scheduleMobileReconnect('PCに接続できません');return;}
+                        handshakeTimer=setTimeout(()=>{
+                            if(epoch===mobileConnectionEpoch && !mobileReady) scheduleMobileReconnect('PCから応答がありません');
+                        },12000);
                     });
-                    conn.on('close', () => {
-                        statusEl.textContent = "⚠️ 接続が切れました。再接続中...";
-                        setTimeout(connect, 3000);
+                    conn.on('data',data=>{
+                        if(epoch!==mobileConnectionEpoch || activeConnection!==conn || !data || typeof data!=='object')return;
+                        if(data.type==='PC_READY'){
+                            if(handshakeTimer){clearTimeout(handshakeTimer);handshakeTimer=null;}
+                            if(mobileReady){lastPongAt=Date.now();return;}
+                            reconnectAttempt=0;lastPongAt=Date.now();
+                            if(data.mode==='normal'||data.mode==='long'){captureMode=data.mode;renderMobileCaptureMode();}
+                            modeChangePending=false;
+                            setMobileLinkReady(true,'');
+                            cancelPendingAckTimers();
+                            flushPendingCaptures();
+                            if(!heartbeatTimer){
+                                heartbeatTimer=setInterval(()=>{
+                                    if(!mobileReady || !conn.open)return;
+                                    if(Date.now()-lastPongAt>25000){scheduleMobileReconnect('接続の応答がなくなりました');return;}
+                                    try{conn.send({type:'PING'});}catch(_){scheduleMobileReconnect('通信が切れました');}
+                                },8000);
+                            }
+                        }else if(data.type==='RECEIPT_ACK' && typeof data.id==='string'){
+                            confirmCaptureReceived(data.id);
+                        }else if(data.type==='PONG'){
+                            lastPongAt=Date.now();
+                        }else if(data.type==='MODE_SYNC' && (data.mode==='normal'||data.mode==='long')){
+                            captureMode=data.mode;modeChangePending=false;renderMobileCaptureMode();
+                        }else if(data.type==='MODE_REJECTED'){
+                            modeChangePending=false;
+                            if(data.mode==='normal'||data.mode==='long'){captureMode=data.mode;renderMobileCaptureMode();}
+                            alert('PCに未解析画像があります。先に解析するかPC側の画像をクリアしてください。');
+                        }else if(data.type==='IMAGE_REJECTED'){
+                            if(pendingCaptures.has(data.id)){
+                                const p=pendingCaptures.get(data.id);
+                                if(p.ackTimer)clearTimeout(p.ackTimer);
+                                p.ackTimer=null;p.sendCount=MAX_ACK_SENDS;
+                            }
+                            setMobileLinkReady(true,'');
+                            alert('PCが画像を受け付けませんでした: '+(data.reason||'理由不明'));
+                        }
                     });
+                    conn.on('close',()=>{if(epoch===mobileConnectionEpoch)scheduleMobileReconnect('PCとの接続が切れました');});
+                    conn.on('error',()=>{if(epoch===mobileConnectionEpoch)scheduleMobileReconnect('接続エラーが発生しました');});
                 });
+                currentPeer.on('disconnected',()=>{if(epoch===mobileConnectionEpoch)scheduleMobileReconnect('PCとの通信が切れました');});
+                currentPeer.on('error',()=>{if(epoch===mobileConnectionEpoch)scheduleMobileReconnect('接続エラーが発生しました');});
             }
-            connect();
+            function scheduleMobileReconnect(message){
+                if(reconnectTimer)return;
+                mobileConnectionEpoch++;
+                activeConnection=null;
+                modeChangePending=false;
+                setMobileLinkReady(false, message + (reconnectAttempt>=5?'。PC画面のQRコードを再確認してください':'。再接続中です'));
+                cancelPendingAckTimers();
+                if(handshakeTimer){clearTimeout(handshakeTimer);handshakeTimer=null;}
+                if(heartbeatTimer){clearInterval(heartbeatTimer);heartbeatTimer=null;}
+                const delay=Math.min(15000,1500*Math.pow(1.6,Math.min(reconnectAttempt++,6)));
+                reconnectTimer=setTimeout(()=>{reconnectTimer=null;connectMobilePeer();},delay);
+            }
+            window.addEventListener('offline',()=>setMobileLinkReady(false,'ネットワークがオフラインです'));
+            window.addEventListener('online',()=>{
+                if(!mobileReady){
+                    if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+                    connectMobilePeer();
+                }
+            });
+            window.addEventListener('beforeunload',e=>{
+                if(pendingCaptures.size){e.preventDefault();e.returnValue='未確認のレシート写真があります';}
+            });
+            connectMobilePeer();
         }
 
         function showQRCode() {
@@ -371,6 +704,11 @@
 
         // カメラ爆速起動 (1280x720)
         async function openLiveCamera() {
+            if(isMobileRemote && (!mobileReady || !activeConnection?.open || pendingCaptures.size>=MAX_PENDING_CAPTURES)) {
+                if (pendingCaptures.size>=MAX_PENDING_CAPTURES) alert('受信未確認の写真が多いため、一度PCへの受信を確認してください。');
+                else setMobileLinkReady(false,'PCとの接続を確認してください。再接続中は撮影できません');
+                return;
+            }
             const modal = document.getElementById('cameraModal');
             const video = document.getElementById('cameraVideo');
             modal.classList.remove('hidden');
@@ -440,6 +778,11 @@
                     ctx.closePath();
                     ctx.fillStyle = "rgba(59, 130, 246, 0.28)"; ctx.fill();
                     ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4; ctx.stroke();
+                    for (const pt of pts) {
+                        ctx.beginPath(); ctx.arc(pt.x, pt.y, Math.max(4, vw * 0.007), 0, Math.PI * 2);
+                        ctx.fillStyle = "#60a5fa"; ctx.fill();
+                        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.stroke();
+                    }
                 } else {
                     smoothedCorners = null;
                     badge.textContent = "🔍 レシート/領収書を探しています...";
@@ -453,128 +796,244 @@
         // 輪郭検出の精度向上（内側のグレー枠や文字を無視して外周矩形を安定検出）
         function detectReceiptQuadFromPixels(ctx, w, h) {
             const imgData = ctx.getImageData(0, 0, w, h).data;
-            let minX = w, maxX = 0, minY = h, maxY = 0;
-            let found = 0;
-
-            for (let y = 2; y < h - 2; y++) {
-                for (let x = 2; x < w - 2; x++) {
+            const scores = new Float32Array(w * h);
+            let sumScore = 0, maxScore = 0, count = 0;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
                     const idx = (y * w + x) * 4;
                     const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
-                    const lum = 0.299*r + 0.587*g + 0.114*b;
+                    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
                     const sat = Math.max(r,g,b) - Math.min(r,g,b);
-                    // 明るい紙（白系・薄い青系領収書）を高精度に検出
-                    if (lum > 130 && sat < 50) {
-                        if (x < minX) minX = x; if (x > maxX) maxX = x;
-                        if (y < minY) minY = y; if (y > maxY) maxY = y;
-                        found++;
+                    const whiteScore = Math.max(0, lum - sat * 0.85);
+                    scores[y*w+x] = whiteScore;
+                    if (x > w*0.1 && x < w*0.9 && y > h*0.1 && y < h*0.9) {
+                        sumScore += whiteScore;
+                        if (whiteScore > maxScore) maxScore = whiteScore;
+                        count++;
                     }
                 }
             }
+            if (!count) return null;
+            const avgScore = sumScore / count;
+            if (maxScore - avgScore < 18 || maxScore < 115) return null;
+            const threshold = Math.max(110, avgScore + (maxScore - avgScore) * 0.35);
+            const rawMask = new Uint8Array(w*h);
+            for (let i=0;i<w*h;i++) rawMask[i] = scores[i] >= threshold ? 1 : 0;
 
-            if (found < (w * h * 0.04) || (maxX - minX) < (w * 0.25) || (maxY - minY) < (h * 0.25)) return null;
+            // 3x3多数決でレシート内の印字の穴を埋め、背景ノイズを抑える。
+            const mask = new Uint8Array(w*h);
+            for (let y=1;y<h-1;y++) for (let x=1;x<w-1;x++) {
+                let n = 0;
+                for (let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++) {
+                    n += rawMask[(y+dy)*w+x+dx];
+                }
+                if (n>=5) mask[y*w+x]=1;
+            }
 
-            const pad = 2;
-            const x0 = Math.max(0, minX - pad), y0 = Math.max(0, minY - pad);
-            const x1 = Math.min(w, maxX + pad), y1 = Math.min(h, maxY + pad);
-
-            return [
-                { x: x0 / w, y: y0 / h },
-                { x: x1 / w, y: y0 / h },
-                { x: x1 / w, y: y1 / h },
-                { x: x0 / w, y: y1 / h }
-            ];
+            // 最大の白い連結領域を取得。四隅はその輪郭から抽出する。
+            const seen = new Uint8Array(w*h), queue = new Int32Array(w*h);
+            let bestBlob=[];
+            for (let y=1;y<h-1;y++) for (let x=1;x<w-1;x++) {
+                const start=y*w+x;
+                if (!mask[start] || seen[start]) continue;
+                let head=0,tail=0; queue[tail++]=start; seen[start]=1;
+                const blob=[];
+                while(head<tail){
+                    const idx=queue[head++]; blob.push(idx);
+                    const cx=idx%w,cy=(idx-cx)/w;
+                    const neighbors=[idx-w,idx+w,idx-1,idx+1];
+                    for(let k=0;k<4;k++){
+                        const nb=neighbors[k];
+                        if (nb<0 || nb>=w*h || !mask[nb] || seen[nb]) continue;
+                        seen[nb]=1;queue[tail++]=nb;
+                    }
+                }
+                if(blob.length>bestBlob.length) bestBlob=blob;
+            }
+            const ratio=bestBlob.length/(w*h);
+            if(ratio<0.035 || ratio>0.92) return null;
+            let minX=w,maxX=0,minY=h,maxY=0;
+            const blobSet=new Uint8Array(w*h);
+            for(const idx of bestBlob){
+                blobSet[idx]=1;
+                const px=idx%w,py=Math.floor(idx/w);
+                minX=Math.min(minX,px);maxX=Math.max(maxX,px);
+                minY=Math.min(minY,py);maxY=Math.max(maxY,py);
+            }
+            const bw=Math.max(10,maxX-minX), bh=Math.max(10,maxY-minY);
+            if(bw<w*0.12 || bh<h*0.18) return null;
+            const boundaryPts=[];
+            for(const idx of bestBlob){
+                const px=idx%w,py=Math.floor(idx/w);
+                if(px===0 || px===w-1 || py===0 || py===h-1 ||
+                   !blobSet[idx-1] || !blobSet[idx+1] || !blobSet[idx-w] || !blobSet[idx+w]) {
+                    boundaryPts.push({x:px,y:py});
+                }
+            }
+            if(boundaryPts.length<10) return null;
+            let tl=boundaryPts[0],tr=boundaryPts[0],br=boundaryPts[0],bl=boundaryPts[0];
+            let minTL=Infinity,minTR=Infinity,minBR=Infinity,minBL=Infinity;
+            for(const p of boundaryPts){
+                const nx=(p.x-minX)/bw, ny=(p.y-minY)/bh;
+                const sTL=nx+ny, sTR=(1-nx)+ny;
+                const sBR=(1-nx)+(1-ny), sBL=nx+(1-ny);
+                if(sTL<minTL){minTL=sTL;tl=p;}
+                if(sTR<minTR){minTR=sTR;tr=p;}
+                if(sBR<minBR){minBR=sBR;br=p;}
+                if(sBL<minBL){minBL=sBL;bl=p;}
+            }
+            const pts=[tl,tr,br,bl];
+            // 同一点が複数の角と認識される誤検出や逆向きの四角形を除外。
+            const cross=(a,b,c)=>(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x);
+            const crosses=pts.map((p,i)=>cross(p,pts[(i+1)%4],pts[(i+2)%4]));
+            if (crosses.some(v=>v<=2)) return null;
+            const area=Math.abs(pts.reduce((a,p,i)=>a+p.x*pts[(i+1)%4].y-pts[(i+1)%4].x*p.y,0))/2;
+            if(area<0.025*w*h) return null;
+            return pts.map(p=>({x:p.x/w,y:p.y/h}));
         }
 
         function evaluateQuadGeometry(pts) {
-            return {
-                badgeText: "🟢 捕捉完了 (高精度フラット化)",
-                badgeClass: "bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow animate-pulse",
-                tipText: "この状態でシャッターを押してください"
-            };
+            const topW=Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y);
+            const bottomW=Math.hypot(pts[2].x-pts[3].x,pts[2].y-pts[3].y);
+            const leftH=Math.hypot(pts[3].x-pts[0].x,pts[3].y-pts[0].y);
+            const rightH=Math.hypot(pts[2].x-pts[1].x,pts[2].y-pts[1].y);
+            const horizDiff=Math.abs(topW-bottomW)/Math.max(topW,bottomW,1);
+            const vertDiff=Math.abs(leftH-rightH)/Math.max(leftH,rightH,1);
+            function angleCos(a,b,c){
+                const v1x=a.x-b.x,v1y=a.y-b.y,v2x=c.x-b.x,v2y=c.y-b.y;
+                const len1=Math.hypot(v1x,v1y),len2=Math.hypot(v2x,v2y);
+                return len1&&len2?Math.abs((v1x*v2x+v1y*v2y)/(len1*len2)):1;
+            }
+            const maxCos=Math.max(angleCos(pts[3],pts[0],pts[1]),angleCos(pts[0],pts[1],pts[2]),angleCos(pts[1],pts[2],pts[3]),angleCos(pts[2],pts[3],pts[0]));
+            const distortion=Math.max(horizDiff,vertDiff,maxCos*0.85);
+            if(distortion<0.08) return {badgeText:'🟢 最高精度 (真っ直ぐ綺麗に捉えています)',badgeClass:'bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow',tipText:'完璧な角度です。このままシャッターを押してください'};
+            if(distortion<0.16) return {badgeText:'🔵 高精度 (良好な角度です)',badgeClass:'bg-blue-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow',tipText:'綺麗に読み取れる角度です（自動でフラット化します）'};
+            if(distortion<0.26) return {badgeText:'🟠 中精度 (斜めになっています)',badgeClass:'bg-amber-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow',tipText:'少し斜めです。真上から構えるとより正確になります'};
+            return {badgeText:'🔴 低精度 (傾きが大きく文字潰れ注意)',badgeClass:'bg-red-500 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow',tipText:'大きく傾いています。できるだけ真上から映してください'};
         }
 
         function takeSnapshot() {
-            const video = document.getElementById('cameraVideo');
-            const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
-            const srcCanvas = document.createElement('canvas');
-            srcCanvas.width = vw; srcCanvas.height = vh;
-            srcCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh);
-
-            let normCorners = smoothedCorners || [{x:0.1,y:0.1},{x:0.9,y:0.1},{x:0.9,y:0.9},{x:0.1,y:0.9}];
-            const srcPts = normCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
-
+            const video=document.getElementById('cameraVideo');
+            if(isMobileRemote && (!mobileReady || !activeConnection?.open || pendingCaptures.size>=MAX_PENDING_CAPTURES)){
+                if(pendingCaptures.size>=MAX_PENDING_CAPTURES) alert('受信未確認の写真が多いため、一度PCへの受信を確認してください。');
+                else setMobileLinkReady(false,'PCとの接続が切れました。再接続後に撮影してください');
+                return;
+            }
+            if(!smoothedCorners || !video.videoWidth || !video.videoHeight){
+                alert('レシートの四隅を検出できていません。青い枠が紙に合うよう撮影位置と背景を調整してください。');return;
+            }
+            const vw=video.videoWidth,vh=video.videoHeight;
+            const srcCanvas=document.createElement('canvas');srcCanvas.width=vw;srcCanvas.height=vh;
+            srcCanvas.getContext('2d').drawImage(video,0,0,vw,vh);
+            const center={x:smoothedCorners.reduce((s,p)=>s+p.x,0)/4,y:smoothedCorners.reduce((s,p)=>s+p.y,0)/4};
+            const srcPts=smoothedCorners.map(p=>({x:(p.x+(center.x-p.x)*0.01)*vw,y:(p.y+(center.y-p.y)*0.01)*vh}));
             closeLiveCamera();
             document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "台形補正・フラット化中...";
-
-            setTimeout(() => {
-                const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
-                if (isMobileRemote) {
-                    if (activeConnection && activeConnection.open) {
-                        activeConnection.send({ type: 'NEW_RECEIPT_IMAGE', image: flattened });
-                        mobileSentCounter++;
-                        document.getElementById('mobileSentCount').textContent = `送信済: ${mobileSentCounter}枚`;
-                    }
-                    document.getElementById('mobileLastPreview').innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
-                } else {
-                    receiptImages.push(flattened);
-                    updateThumbnailUI();
-                }
-                document.getElementById('loadingModal').classList.add('hidden');
-            }, 50);
+            document.getElementById('loadingText').textContent='四隅の台形補正・フラット化中...';
+            setTimeout(async ()=>{
+                try {
+                    const flattened=warpAndOptimizeReceipt(srcCanvas,srcPts);
+                    if(isMobileRemote){
+                        const c={id:makeCaptureId(),image:flattened,mode:captureMode,room:roomId,createdAt:Date.now(),sendCount:0,ackTimer:null};
+                        pendingCaptures.set(c.id,c);
+                        renderMobileTransferStatus();
+                        showMobilePreview(flattened,'PC受信確認待ち');
+                        try {await persistPendingCapture(c);} catch(e){
+                            console.warn('[TRANSFER] 端末への一時保存失敗',e?.message);
+                            alert('端末への未送信写真の一時保存ができません。PC受信確認まではこの画面を閉じないでください。');
+                        }
+                        trySendPendingCapture(c.id);
+                    }else{receiptImages.push(flattened);updateThumbnailUI();}
+                }catch(e){console.error('レシート補正失敗',e);alert('写真の切り抜きに失敗しました。再撮影してください。');}
+                finally{document.getElementById('loadingModal').classList.add('hidden');}
+            },40);
         }
 
-        function warpAndOptimizeReceipt(srcCanvas, pts) {
-            const outW = 640, outH = 900;
-            // 現在の輪郭検出は軸に平行な矩形だけを返すため、
-            // その場合はブラウザの高速な画像描画を使用する。
-            // 将来的に四角形の台形補正が入った場合は従来の処理へフォールバック。
-            const rectangle =
-                Math.abs(pts[0].y - pts[1].y) < 1 &&
-                Math.abs(pts[2].y - pts[3].y) < 1 &&
-                Math.abs(pts[0].x - pts[3].x) < 1 &&
-                Math.abs(pts[1].x - pts[2].x) < 1;
-            if (rectangle) {
-                const x = Math.max(0, Math.min(pts[0].x, pts[3].x));
-                const y = Math.max(0, Math.min(pts[0].y, pts[1].y));
-                const right = Math.min(srcCanvas.width, Math.max(pts[1].x, pts[2].x));
-                const bottom = Math.min(srcCanvas.height, Math.max(pts[2].y, pts[3].y));
-                const croppedW = right - x, croppedH = bottom - y;
-                if (croppedW > 1 && croppedH > 1) {
-                    const fastCanvas = document.createElement('canvas');
-                    fastCanvas.width = outW; fastCanvas.height = outH;
-                    const fastCtx = fastCanvas.getContext('2d');
-                    fastCtx.imageSmoothingEnabled = true;
-                    fastCtx.imageSmoothingQuality = 'high';
-                    fastCtx.drawImage(srcCanvas, x, y, croppedW, croppedH, 0, 0, outW, outH);
-                    return fastCanvas.toDataURL('image/jpeg', 0.85);
-                }
+        function warpAndOptimizeReceipt(srcCanvas,pts) {
+            // 保存画面では、縦横比を維持して四隅だけを画像全域に配置する。
+            const topW=Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y);
+            const bottomW=Math.hypot(pts[2].x-pts[3].x,pts[2].y-pts[3].y);
+            const leftH=Math.hypot(pts[3].x-pts[0].x,pts[3].y-pts[0].y);
+            const rightH=Math.hypot(pts[2].x-pts[1].x,pts[2].y-pts[1].y);
+            const avgW=Math.max(10,(topW+bottomW)/2);
+            const avgH=Math.max(10,(leftH+rightH)/2);
+            const outW=640, outH=Math.round(outW*Math.min(3.5,Math.max(0.5,avgH/avgW)));
+            const dstPts=[{x:0,y:0},{x:outW-1,y:0},{x:outW-1,y:outH-1},{x:0,y:outH-1}];
+            const H=computeHomography(dstPts,pts);
+            if (H.every(Number.isFinite)) {
+                try {
+                    const converted=warpReceiptWithWebGL(srcCanvas,H,outW,outH);
+                    if(converted) return converted;
+                } catch(err){console.warn('GPU台形補正は利用できません。通常処理に切替',err?.message);}
             }
-            const dstPts = [{x:0,y:0},{x:outW-1,y:0},{x:outW-1,y:outH-1},{x:0,y:outH-1}];
-            const H = computeHomography(dstPts, pts);
-            const sData = srcCanvas.getContext('2d').getImageData(0, 0, srcCanvas.width, srcCanvas.height).data;
-            const sw = srcCanvas.width, sh = srcCanvas.height;
-
-            const outCanvas = document.createElement('canvas');
-            outCanvas.width = outW; outCanvas.height = outH;
-            const oCtx = outCanvas.getContext('2d');
-            const outImg = oCtx.createImageData(outW, outH);
-            const dData = outImg.data;
-
-            for (let y = 0; y < outH; y++) {
-                for (let x = 0; x < outW; x++) {
-                    const denom = H[6]*x + H[7]*y + 1;
-                    const sx = (H[0]*x + H[1]*y + H[2]) / denom;
-                    const sy = (H[3]*x + H[4]*y + H[5]) / denom;
-                    const x0 = Math.max(0, Math.min(sw-1, Math.floor(sx)));
-                    const y0 = Math.max(0, Math.min(sh-1, Math.floor(sy)));
-                    const idx = (y0 * sw + x0) * 4;
-                    const dIdx = (y * outW + x) * 4;
-                    dData[dIdx] = sData[idx]; dData[dIdx+1] = sData[idx+1]; dData[dIdx+2] = sData[idx+2]; dData[dIdx+3] = 255;
-                }
+            return warpReceiptOnCPU(srcCanvas,H,outW,outH);
+        }
+        function warpReceiptWithWebGL(srcCanvas,H,outW,outH){
+            const canvas=document.createElement('canvas');canvas.width=outW;canvas.height=outH;
+            const gl=canvas.getContext('webgl',{alpha:false,antialias:false,preserveDrawingBuffer:true,depth:false,stencil:false});
+            if(!gl) return null;
+            const vs='attribute vec2 a_pos; void main(){gl_Position=vec4(a_pos,0.0,1.0);}';
+            const fs=`precision highp float;
+                uniform sampler2D u_image;
+                uniform vec2 u_output,u_input;
+                uniform vec3 u_h0,u_h1,u_h2;
+                void main(){
+                    vec3 p=vec3(gl_FragCoord.x-0.5,u_output.y-gl_FragCoord.y-0.5,1.0);
+                    float den=dot(u_h2,p);
+                    if(abs(den)<0.000001){gl_FragColor=vec4(1.0);return;}
+                    vec2 src=vec2(dot(u_h0,p),dot(u_h1,p))/den;
+                    vec2 uv=(src+vec2(0.5))/u_input;
+                    gl_FragColor=texture2D(u_image,vec2(uv.x,1.0-uv.y));
+                }`;
+            const shader=(type,source)=>{
+                const sh=gl.createShader(type);gl.shaderSource(sh,source);gl.compileShader(sh);
+                if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(sh)||'shader');
+                return sh;
+            };
+            const program=gl.createProgram();
+            gl.attachShader(program,shader(gl.VERTEX_SHADER,vs));
+            gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fs));
+            gl.linkProgram(program);
+            if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program)||'program');
+            gl.useProgram(program);
+            const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+            gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+            const pos=gl.getAttribLocation(program,'a_pos');gl.enableVertexAttribArray(pos);
+            gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+            const tex=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,srcCanvas);
+            gl.uniform1i(gl.getUniformLocation(program,'u_image'),0);
+            gl.uniform2f(gl.getUniformLocation(program,'u_output'),outW,outH);
+            gl.uniform2f(gl.getUniformLocation(program,'u_input'),srcCanvas.width,srcCanvas.height);
+            gl.uniform3f(gl.getUniformLocation(program,'u_h0'),H[0],H[1],H[2]);
+            gl.uniform3f(gl.getUniformLocation(program,'u_h1'),H[3],H[4],H[5]);
+            gl.uniform3f(gl.getUniformLocation(program,'u_h2'),H[6],H[7],1);
+            gl.viewport(0,0,outW,outH);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+            if(gl.getError()!==gl.NO_ERROR) throw new Error('GPU描画に失敗しました');
+            return canvas.toDataURL('image/jpeg',0.83);
+        }
+        function warpReceiptOnCPU(srcCanvas,H,outW,outH){
+            const sw=srcCanvas.width,sh=srcCanvas.height;
+            const src=srcCanvas.getContext('2d').getImageData(0,0,sw,sh).data;
+            const out=document.createElement('canvas');out.width=outW;out.height=outH;
+            const ctx=out.getContext('2d'),img=ctx.createImageData(outW,outH),dst=img.data;
+            for(let y=0;y<outH;y++)for(let x=0;x<outW;x++){
+                const den=H[6]*x+H[7]*y+1;
+                const sx=(H[0]*x+H[1]*y+H[2])/den,sy=(H[3]*x+H[4]*y+H[5])/den;
+                const x0=Math.max(0,Math.min(sw-1,Math.floor(sx))),y0=Math.max(0,Math.min(sh-1,Math.floor(sy)));
+                const x1=Math.min(sw-1,x0+1),y1=Math.min(sh-1,y0+1);
+                const dx=Math.max(0,Math.min(1,sx-x0)),dy=Math.max(0,Math.min(1,sy-y0));
+                const wa=(1-dx)*(1-dy),wb=dx*(1-dy),wc=(1-dx)*dy,wd=dx*dy;
+                const a=4*(y0*sw+x0),b=4*(y0*sw+x1),c=4*(y1*sw+x0),d=4*(y1*sw+x1),o=4*(y*outW+x);
+                for(let channel=0;channel<3;channel++)dst[o+channel]=src[a+channel]*wa+src[b+channel]*wb+src[c+channel]*wc+src[d+channel]*wd;
+                dst[o+3]=255;
             }
-            oCtx.putImageData(outImg, 0, 0);
-            return outCanvas.toDataURL('image/jpeg', 0.85);
+            ctx.putImageData(img,0,0);return out.toDataURL('image/jpeg',0.83);
         }
 
         function computeHomography(src, dst) {
@@ -649,11 +1108,17 @@
                 if (bodyBytes > 3.8 * 1024 * 1024) {
                     throw new Error('画像の合計サイズが大きすぎます（' + (bodyBytes/1024/1024).toFixed(1) + 'MB）。枚数を減らして再実行してください。');
                 }
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body
-                });
+                const abortController = new AbortController();
+                const timerId = setTimeout(() => abortController.abort(), 105000);
+                let response;
+                try {
+                    response = await fetch('/api/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body,
+                        signal: abortController.signal
+                    });
+                } finally { clearTimeout(timerId); }
                 const rawText = await response.text();
                 let resJson = null;
                 try { resJson = JSON.parse(rawText); } catch (_) { /* HTMLやプレーンテキストにも対処する */ }
@@ -669,6 +1134,9 @@
                     throw new Error('APIがJSON以外の応答を返しました（HTTP ' + response.status + '）。Vercelログを確認してください。');
                 }
                 const items = Array.isArray(resJson) ? resJson : [resJson];
+                if(!items.length || items.some(x=>!x || typeof x!=='object' || Array.isArray(x))) {
+                    throw new Error('AIの回答形式が不正です。画像を保持して再解析できます。');
+                }
                 items.forEach(item => receiptsData.unshift(item));
                 renderTable();
                 // 解析中に届いた新しいレシートは残す（重複する文字列画像を1件だけ削除）。
@@ -680,7 +1148,7 @@
                 console.info('[OCR] success', { images: submitted.length, bytes: bodyBytes, elapsedMs: Math.round(performance.now()-started) });
             } catch (err) {
                 console.warn('[OCR] failed', { images: submitted.length, elapsedMs: Math.round(performance.now()-started), message: err.message });
-                alert('OCR解析エラー: ' + err.message + '\n撮影画像は残っていますので、原因確認後に再実行できます。');
+                alert('OCR解析エラー: ' + (err.name === 'AbortError' ? '約105秒経過してもAIから応答がありません。撮影画像を保持しました。' : err.message) + '\n撮影画像は残っていますので、原因確認後に再実行できます。');
             } finally {
                 analysisInProgress = false;
                 btn.disabled = receiptImages.length === 0;
