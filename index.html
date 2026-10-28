@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>レシートAIクラウド - プロフェッショナル</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 確実なQRコード生成ライブラリを再配置 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -60,7 +61,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (リアルタイム順次解析)</span>
+                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (QR完全復元)</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -207,7 +208,7 @@
         </div>
     </div>
 
-    <!-- QRコードモーダル -->
+    <!-- QRコードモーダル（二重安全バックアップ付き） -->
     <div id="qrModal" class="hidden fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
             <h3 class="text-lg font-bold text-white">スマホカメラ連携用QRコード</h3>
@@ -225,7 +226,6 @@
         <div class="text-center space-y-3 max-w-sm w-full">
             <p class="text-xl font-bold text-indigo-300" id="loadingTitle">一括AI解析中...</p>
             <p class="text-xs text-slate-300" id="loadingText">準備中...</p>
-            <!-- 進捗バー -->
             <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
                 <div id="progressBar" class="bg-indigo-500 h-full transition-all duration-300 w-0"></div>
             </div>
@@ -353,16 +353,32 @@
             connect();
         }
 
+        // QRコード表示機能の確実な実行
         function showQRCode() {
             const modal = document.getElementById('qrModal');
             const qrContainer = document.getElementById('qrcode');
             modal.classList.remove('hidden');
             qrContainer.innerHTML = '';
             const pairUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
+            
             try {
-                new QRCode(qrContainer, { text: pairUrl, width: 200, height: 200, colorDark: "#000", colorLight: "#fff" });
+                if (typeof QRCode !== 'undefined') {
+                    new QRCode(qrContainer, {
+                        text: pairUrl,
+                        width: 200,
+                        height: 200,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff"
+                    });
+                } else {
+                    throw new Error('QRCode lib missing');
+                }
             } catch(e) {
-                qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pairUrl)}" width="200" height="200">`;
+                const fallbackImg = document.createElement('img');
+                fallbackImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pairUrl)}`;
+                fallbackImg.width = 200;
+                fallbackImg.height = 200;
+                qrContainer.appendChild(fallbackImg);
             }
         }
         function closeQRCode() { document.getElementById('qrModal').classList.add('hidden'); }
@@ -418,7 +434,6 @@
                     if (!smoothedCorners) {
                         smoothedCorners = detected;
                     } else {
-                        // 慣性係数を強化(0.18)し、手ブレや反射でチカチカ暴れないよう強力にロック
                         const alpha = 0.18;
                         for (let i = 0; i < 4; i++) {
                             smoothedCorners[i].x = smoothedCorners[i].x * (1 - alpha) + detected[i].x * alpha;
@@ -650,4 +665,179 @@
         // 【1枚ずつ順番に安全処理 ＆ 進捗バー付き一括解析】
         // =========================================================================
         async function analyzeReceipts() {
-            if (receiptImages.length ===
+            if (receiptImages.length === 0) return;
+            const loadingModal = document.getElementById('loadingModal');
+            const loadingText = document.getElementById('loadingText');
+            const progressBar = document.getElementById('progressBar');
+            const progressCount = document.getElementById('progressCount');
+
+            loadingModal.classList.remove('hidden');
+            const total = receiptImages.length;
+            let successCount = 0;
+
+            const imagesToProcess = [...receiptImages];
+
+            for (let i = 0; i < total; i++) {
+                const currentNum = i + 1;
+                loadingText.textContent = `${currentNum} / ${total} 枚目をAI解析中...`;
+                const percent = Math.round((i / total) * 100);
+                progressBar.style.width = `${percent}%`;
+                progressCount.textContent = `${i} / ${total} 枚完了`;
+
+                try {
+                    const response = await fetch('/api/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: imagesToProcess[i], mode: captureMode })
+                    });
+                    
+                    const rawText = await response.text();
+                    let resJson;
+                    try {
+                        resJson = JSON.parse(rawText);
+                    } catch (e) {
+                        throw new Error("AIサーバー応答エラー (" + rawText.slice(0, 40) + "...)");
+                    }
+
+                    if (!response.ok) throw new Error(resJson.error || '解析失敗');
+
+                    if (Array.isArray(resJson)) {
+                        resJson.forEach(item => receiptsData.unshift(item));
+                    } else {
+                        receiptsData.unshift(resJson);
+                    }
+                    renderTable();
+                    successCount++;
+
+                    if (i < total - 1) {
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                } catch (err) {
+                    alert(`${currentNum}枚目のOCR解析エラー: ${err.message}`);
+                }
+            }
+
+            progressBar.style.width = `100%`;
+            progressCount.textContent = `${total} / ${total} 枚完了`;
+            loadingText.textContent = "すべての解析が完了しました！";
+
+            setTimeout(() => {
+                loadingModal.classList.add('hidden');
+                receiptImages.splice(0, successCount);
+                updateThumbnailUI();
+            }, 600);
+        }
+
+        function addRowManually() {
+            const newRow = {};
+            tableColumns.forEach(col => newRow[col.key] = col.key === 'total' || col.key === 'tax' ? 0 : '');
+            newRow.date = new Date().toISOString().slice(0,10);
+            newRow.category = '消耗品費';
+            receiptsData.unshift(newRow);
+            renderTable();
+        }
+
+        function openColumnManager() {
+            document.getElementById('columnModal').classList.remove('hidden');
+            renderColumnList();
+        }
+        function closeColumnManager() { document.getElementById('columnModal').classList.add('hidden'); }
+
+        function renderColumnList() {
+            const cList = document.getElementById('columnListContainer');
+            cList.innerHTML = tableColumns.map((col, idx) => `
+                <div class="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                    <span class="text-sm text-white">${col.label} <span class="text-xs text-slate-500">(${col.key})</span></span>
+                    ${idx >= 5 ? `<button onclick="removeColumn(${idx})" class="text-red-400 hover:text-red-300 text-xs">削除</button>` : `<span class="text-xs text-slate-500">固定</span>`}
+                </div>
+            `).join('');
+        }
+
+        function addNewColumn() {
+            const lbl = document.getElementById('newColLabelInput').value.trim();
+            if (!lbl) return;
+            const key = 'custom_' + Date.now();
+            tableColumns.push({ key, label: lbl });
+            document.getElementById('newColLabelInput').value = '';
+            renderColumnList();
+            renderTable();
+        }
+
+        function removeColumn(idx) {
+            tableColumns.splice(idx, 1);
+            renderColumnList();
+            renderTable();
+        }
+
+        function renderTable() {
+            const headerRow = document.getElementById('tableHeaderRow');
+            const tbody = document.getElementById('receiptTableBody');
+            if (!headerRow || !tbody) return;
+
+            headerRow.innerHTML = tableColumns.map((col, idx) => `
+                <th draggable="true" ondragstart="handleDragStart(event, ${idx})" ondragover="handleDragOver(event)" ondrop="handleDrop(event, ${idx})"
+                    class="p-3.5 cursor-grab active:cursor-grabbing hover:bg-slate-600/60 transition border-r border-slate-700/60">
+                    <div class="flex items-center space-x-2"><i class="fa-solid fa-grip-vertical text-slate-400 text-xs"></i><span>${col.label}</span></div>
+                </th>
+            `).join('') + `<th class="p-3.5 text-center w-20">操作</th>`;
+
+            if (receiptsData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${tableColumns.length + 1}" class="p-10 text-center text-slate-500">まだデータがありません。</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = receiptsData.map((item, rowIdx) => {
+                const cells = tableColumns.map(col => {
+                    const val = item[col.key] ?? '';
+                    if (col.key === 'total' || col.key === 'tax') {
+                        return `<td class="p-3 font-medium">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none">${Number(val||0).toLocaleString()}</span></td>`;
+                    }
+                    return `<td class="p-3"><span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none inline-block">${val}</span></td>`;
+                }).join('');
+                return `<tr class="hover:bg-slate-700/30 transition">${cells}<td class="p-3 text-center"><button onclick="deleteRow(${rowIdx})" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+            }).join('');
+        }
+
+        function handleDragStart(e, idx) { draggedColIndex = idx; e.dataTransfer.effectAllowed = 'move'; }
+        function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+        function handleDrop(e, tIdx) {
+            e.preventDefault();
+            if (draggedColIndex === null || draggedColIndex === tIdx) return;
+            const moved = tableColumns.splice(draggedColIndex, 1)[0];
+            tableColumns.splice(tIdx, 0, moved);
+            draggedColIndex = null; renderTable();
+        }
+
+        function updateCellValue(rowIdx, key, text) {
+            if (!receiptsData[rowIdx]) return;
+            if (key === 'total' || key === 'tax') {
+                const num = Number(text.replace(/[^0-9.-]+/g, ''));
+                receiptsData[rowIdx][key] = isNaN(num) ? 0 : num;
+                renderTable();
+            } else {
+                receiptsData[rowIdx][key] = text.trim();
+            }
+        }
+        function deleteRow(idx) { receiptsData.splice(idx, 1); renderTable(); }
+
+        function exportCSV() {
+            if (receiptsData.length === 0) { alert('出力データがありません'); return; }
+            const headers = tableColumns.map(col => `"${col.label}"`).join(',');
+            let csv = '\ufeff' + headers + '\n';
+            receiptsData.forEach(r => {
+                const row = tableColumns.map(col => `"${String(r[col.key] ?? '').replace(/"/g, '""')}"`).join(',');
+                csv += row + '\n';
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url;
+            a.download = `receipts_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+        }
+        function downloadHTML() {
+            const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html;charset=utf-8' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = 'index.html'; a.click();
+        }
+    </script>
+</body>
+</html>
