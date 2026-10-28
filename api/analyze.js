@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
 
     try {
-        const { image, mode } = req.body; // 1枚ずつ安全に受け取る
+        const { image, mode } = req.body;
         if (!image) return res.status(400).json({ error: '画像データがありません' });
 
         let promptText = "";
@@ -22,7 +22,8 @@ export default async function handler(req, res) {
             parts.push({ inline_data: { mime_type: matches[1], data: matches[2] } });
         }
 
-        const modelsToTry = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"];
+        // 現在有効な安定モデルのみを指定
+        const modelsToTry = ["gemini-3.8-flash", "gemini-3.6-flash"];
         let data = null;
         let lastError = null;
 
@@ -53,7 +54,7 @@ export default async function handler(req, res) {
         }
 
         if (!data) {
-            throw new Error(`AIサーバーが混雑しています (${lastError})。`);
+            throw new Error(`AIサーバー混雑 (${lastError})`);
         }
 
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
