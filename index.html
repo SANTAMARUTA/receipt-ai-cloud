@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>レシートAIクラウド - プロフェッショナル</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+    <!-- ヘッダー -->
+    <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-3">
+            <div class="bg-indigo-600 p-2 rounded-xl shadow-md">
+                <i class="fa-solid fa-receipt text-white text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
+                <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">マスター専用・セキュア版</span>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button onclick="showQRCode()" class="bg-slate-700 hover:bg-slate-600 text-sm px-4 py-2 rounded-lg font-medium transition flex items-center space-x-2">
+                <i class="fa-solid fa-qrcode"></i><span>スマホ連携QR</span>
+            </button>
+            <button onclick="downloadHTML()" class="bg-indigo-600 hover:bg-indigo-500 text-sm px-4 py-2 rounded-lg font-medium transition flex items-center space-x-2 shadow-md">
+                <i class="fa-solid fa-download"></i><span>HTML保存</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+        <!-- レシート撮影・アップロード・台形補正セクション -->
+        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold flex items-center space-x-2">
+                    <i class="fa-solid fa-camera text-indigo-400"></i>
+                    <span>レシート撮影・アップロード（台形補正対応）</span>
+                </h2>
+                <span class="text-xs text-slate-400">サーバー側で安全にAI解析します</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                <div class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50" onclick="document.getElementById('receiptInput').click()">
+                    <i class="fa-solid fa-cloud-arrow-up text-4xl text-indigo-400 mb-3"></i>
+                    <p class="font-medium">スマホカメラで撮影 / 画像を選択</p>
+                    <p class="text-xs text-slate-400 mt-1">JPEG, PNG対応（自動で台形補正・切り抜きを行います）</p>
+                    <input type="file" id="receiptInput" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelect(event)">
+                </div>
+
+                <!-- プレビュー & 補正エリア -->
+                <div id="cropArea" class="hidden bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
+                    <p class="text-sm font-medium text-indigo-300"><i class="fa-solid fa-crop mr-1"></i> 撮影画像の確認・解析</p>
+                    <div class="relative max-h-60 overflow-hidden rounded-lg flex justify-center bg-black/40">
+                        <img id="previewImage" class="max-h-56 object-contain" alt="プレビュー">
+                    </div>
+                    <button onclick="analyzeReceipt()" id="analyzeBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i><span>AI自動OCR解析を実行する</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 読み取り結果一覧テーブル -->
+        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-semibold flex items-center space-x-2">
+                    <i class="fa-solid fa-table text-indigo-400"></i>
+                    <span>解析済みレシート一覧</span>
+                </h2>
+                <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-sm px-4 py-2 rounded-lg font-medium transition flex items-center space-x-2 shadow-md">
+                    <i class="fa-solid fa-file-csv"></i><span>会計ソフト用CSV出力</span>
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-slate-700/50 text-slate-300 border-b border-slate-700">
+                            <th class="p-3">利用日</th>
+                            <th class="p-3">店舗名</th>
+                            <th class="p-3">金額 (税込)</th>
+                            <th class="p-3">消費税</th>
+                            <th class="p-3">勘定科目</th>
+                            <th class="p-3 text-center">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="receiptTableBody" class="divide-y divide-slate-700">
+                        <tr>
+                            <td colspan="6" class="p-8 text-center text-slate-500">まだレシートが読み込まれていません。「スマホカメラで撮影」からお試しください。</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- QRコードモーダル -->
+    <div id="qrModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <h3 class="text-lg font-bold">スマホ連携用QRコード</h3>
+            <div id="qrcode" class="bg-white p-4 rounded-xl inline-block"></div>
+            <p class="text-xs text-slate-400">このQRコードをスマホのカメラで読み取ると、ログイン不要でそのままカメラ撮影＆OCR解析を行えます。</p>
+            <button onclick="closeQRCode()" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg font-medium">閉じる</button>
+        </div>
+    </div>
+
+    <!-- ローディングモーダル -->
+    <div id="loadingModal" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center p-4 z-50 space-y-4">
+        <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-500 border-t-transparent"></div>
+        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIがレシートを解析中...</p>
+    </div>
+
+    <script>
+        let currentBase64Image = null;
+        let receiptsData = [];
+
+        function handleImageSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentBase64Image = e.target.result;
+                document.getElementById('previewImage').src = currentBase64Image;
+                document.getElementById('cropArea').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function analyzeReceipt() {
+            if (!currentBase64Image) return;
+            document.getElementById('loadingModal').classList.remove('hidden');
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: currentBase64Image })
+                });
+
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || '解析に失敗しました');
+
+                receiptsData.unshift(result);
+                renderTable();
+                document.getElementById('cropArea').classList.add('hidden');
+                alert('レシートの解析が完了しました！');
+            } catch (error) {
+                alert('エラー: ' + error.message);
+            } finally {
+                document.getElementById('loadingModal').classList.add('hidden');
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('receiptTableBody');
+            if (receiptsData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500">まだレシートが読み込まれていません。</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = receiptsData.map((item, index) => `
+                <tr class="hover:bg-slate-700/30 transition">
+                    <td class="p-3">${item.date || ''}</td>
+                    <td class="p-3 font-medium">${item.store || ''}</td>
+                    <td class="p-3">¥${Number(item.total || 0).toLocaleString()}</td>
+                    <td class="p-3">¥${Number(item.tax || 0).toLocaleString()}</td>
+                    <td class="p-3"><span class="bg-indigo-950 text-indigo-300 px-2.5 py-1 rounded-md text-xs border border-indigo-800">${item.category || '消耗品費'}</span></td>
+                    <td class="p-3 text-center"><button onclick="deleteRow(${index})" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button></td>
+                </tr>
+            `).join('');
+        }
+
+        function deleteRow(index) {
+            receiptsData.splice(index, 1);
+            renderTable();
+        }
+
+        function showQRCode() {
+            document.getElementById('qrcode').innerHTML = '';
+            new QRCode(document.getElementById('qrcode'), {
+                text: window.location.href,
+                width: 180,
+                height: 180
+            });
+            document.getElementById('qrModal').classList.remove('hidden');
+        }
+
+        function closeQRCode() {
+            document.getElementById('qrModal').classList.add('hidden');
+        }
+
+        function exportCSV() {
+            if (receiptsData.length === 0) {
+                alert('出力するデータがありません。');
+                return;
+            }
+            let csv = '\ufeff利用日,店舗名,金額,消費税,勘定科目\n';
+            receiptsData.forEach(r => {
+                csv += `"${r.date}","${r.store}",${r.total},${r.tax},"${r.category}"\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `receipts_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+        }
+
+        function downloadHTML() {
+            const htmlContent = document.documentElement.outerHTML;
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'index.html';
+            a.click();
+        }
+    </script>
+</body>
+</html>
