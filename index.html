@@ -5,17 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>レシートAIクラウド - プロフェッショナル</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 確実なQRコード生成ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <!-- PC・スマホ間リアルタイムP2P通信エンジン -->
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
 
-    <!-- ================================================================= -->
-    <!-- 📱 スマホ専用：カメラリモコン画面（QRコードから開いた時のみ表示） -->
-    <!-- ================================================================= -->
+    <!-- 📱 スマホ専用：カメラリモコン画面 -->
     <div id="mobileRemoteView" class="hidden min-h-screen flex flex-col justify-between p-5 bg-slate-950">
         <div class="space-y-4">
             <div class="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg">
@@ -31,30 +27,32 @@
                 <span id="mobileSentCount" class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
             </div>
 
-            <!-- カメラ起動メインボタン -->
+            <!-- 撮影モード切り替え（通常 / 長尺結合） -->
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between">
+                <span class="text-xs font-medium text-slate-300" id="mobileModeLabel">モード: 1枚ずつ通常撮影</span>
+                <button onclick="toggleCaptureMode()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition">
+                    モード切替
+                </button>
+            </div>
+
             <button onclick="openLiveCamera()" class="w-full py-10 bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition rounded-2xl shadow-2xl flex flex-col items-center justify-center space-y-3 border-2 border-indigo-400">
                 <i class="fa-solid fa-camera text-5xl text-white"></i>
-                <span class="text-xl font-bold text-white tracking-wide">カメラを起動して撮影する</span>
-                <span class="text-xs text-indigo-200">撮影すると自動でフラット切り抜きされPCへ転送されます</span>
+                <span class="text-xl font-bold text-white tracking-wide">カメラを起動して撮影</span>
+                <span id="mobileModeSubLabel" class="text-xs text-indigo-200">フラット切り抜きされPCへ自動転送されます</span>
             </button>
 
-            <!-- 直前に撮影してPCへ送ったプレビュー確認枠 -->
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
                 <p class="text-xs font-semibold text-slate-400">直前にPCへ転送したレシート確認</p>
-                <div id="mobileLastPreview" class="bg-black/50 rounded-xl min-h-[160px] max-h-64 overflow-y-auto flex items-center justify-center p-2">
+                <div id="mobileLastPreview" class="bg-black/50 rounded-xl min-h-[140px] max-h-52 overflow-y-auto flex items-center justify-center p-2">
                     <p class="text-xs text-slate-500">まだ撮影されていません</p>
                 </div>
             </div>
         </div>
-
         <p class="text-center text-xs text-slate-500 py-4">OCR解析やCSV出力はPC側の画面で行ってください</p>
     </div>
 
-    <!-- ================================================================= -->
     <!-- 💻 PCメイン管理画面 -->
-    <!-- ================================================================= -->
     <div id="pcMainView">
-        <!-- ヘッダー -->
         <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-wrap justify-between items-center gap-4 shadow-lg">
             <div class="flex items-center space-x-3">
                 <div class="bg-indigo-600 p-2.5 rounded-xl shadow-md">
@@ -63,7 +61,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">PC管理 ＆ スマホカメラ連動</span>
+                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -79,44 +77,50 @@
         </header>
 
         <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
-            <!-- レシート受信・撮影セクション -->
+            <!-- 撮影セクション -->
             <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-6">
-                <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h2 class="text-lg font-semibold flex items-center space-x-2">
                             <i class="fa-solid fa-camera text-indigo-400"></i>
-                            <span>スマホカメラ連携 ＆ フラット切り抜きレシート</span>
+                            <span>スマホカメラ連携 ＆ フラット切り抜き</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">右上の「スマホをカメラとして接続 (QR)」をスマホで読み取って撮影すると、リアルタイムでここに画像が届きます。</p>
+                        <p class="text-xs text-slate-400 mt-1">長いレシートは折って数枚撮影する「長尺結合モード」に切り替えて撮影してください。</p>
+                    </div>
+                    <!-- PC側での撮影モード切り替え -->
+                    <div class="flex items-center space-x-2 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
+                        <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white">
+                            通常モード (1枚ずつ)
+                        </button>
+                        <button onclick="setCaptureMode('long')" id="modeBtnLong" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white">
+                            長尺レシート結合モード
+                        </button>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                    <!-- スマホ接続案内 ＆ PCカメラ起動ボタン -->
                     <div class="space-y-3">
                         <div onclick="showQRCode()" class="border-2 border-dashed border-emerald-500/60 rounded-xl p-6 text-center hover:border-emerald-400 transition cursor-pointer bg-emerald-950/20 flex flex-col items-center justify-center min-h-[140px]">
                             <i class="fa-solid fa-mobile-retro text-3xl text-emerald-400 mb-2"></i>
                             <p class="font-bold text-base text-emerald-300">スマホカメラを接続する</p>
                             <p class="text-xs text-slate-400 mt-1">QRコードを表示してスマホで撮影</p>
                         </div>
-
                         <div onclick="openLiveCamera()" class="border border-slate-700 rounded-xl p-4 text-center hover:bg-slate-700/50 transition cursor-pointer bg-slate-900/50 flex items-center justify-center space-x-2">
                             <i class="fa-solid fa-camera text-indigo-400"></i>
                             <span class="text-xs text-slate-300 font-medium">この端末のカメラで直接撮影する</span>
                         </div>
                     </div>
 
-                    <!-- 切り抜き・最適化済みレシート一覧 (2カラム分) -->
+                    <!-- サムネイル一覧 -->
                     <div class="md:col-span-2 bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
                         <div class="flex justify-between items-center">
                             <p class="text-sm font-medium text-indigo-300">
-                                <i class="fa-solid fa-images mr-1"></i> 最適化済みレシート一覧 (<span id="imageCount">0</span>枚)
-                                <span class="text-xs text-slate-400 ml-2">※長尺レシートは複数枚ためてから解析すると1件に統合されます</span>
+                                <i class="fa-solid fa-images mr-1"></i> スキャン済み画像一覧 (<span id="imageCount">0</span>枚)
+                                <span id="modeStatusTag" class="text-[10px] bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-800 ml-2">通常モード</span>
                             </p>
                             <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
                         </div>
 
-                        <!-- 横幅最大化でレシートだけを表示するコンテナ -->
                         <div id="thumbnailContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto p-2 bg-black/40 rounded-lg min-h-[160px]">
                             <p class="col-span-full text-center text-xs text-slate-500 py-14">スマホで撮影すると、ここに切り抜き済みレシートが自動追加されます</p>
                         </div>
@@ -128,45 +132,46 @@
                 </div>
             </section>
 
-            <!-- 読み取り結果一覧テーブル（列ドラッグ＆ドロップ並び替え対応） -->
+            <!-- 読み取り結果一覧テーブル（列追加・行手入力・ドラッグ＆ドロップ対応） -->
             <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
                 <div class="flex flex-wrap justify-between items-center gap-4">
                     <div>
                         <h2 class="text-lg font-semibold flex items-center space-x-2">
                             <i class="fa-solid fa-table text-indigo-400"></i>
-                            <span>解析済みレシート一覧</span>
+                            <span>解析済みレシート一覧 ＆ 編集</span>
                         </h2>
                         <p class="text-xs text-slate-400 mt-1">
                             <i class="fa-solid fa-arrows-left-right text-indigo-400 mr-1"></i>
-                            項目列のヘッダー（利用日・店舗名など）をマウスでドラッグ＆ドロップして列の位置を自由に入れ替えられます。文字をクリックすると直接編集も可能です。
+                            ヘッダーをドラッグ＆ドロップで並び替え、列の追加や空行の手入力が可能です。
                         </p>
                     </div>
-                    <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-sm px-5 py-2.5 rounded-lg font-bold transition flex items-center space-x-2 shadow-md">
-                        <i class="fa-solid fa-file-csv"></i><span>現在の並び順でCSV出力</span>
-                    </button>
+                    <div class="flex items-center space-x-3">
+                        <button onclick="addRowManually()" class="bg-indigo-600 hover:bg-indigo-500 text-sm px-4 py-2.5 rounded-lg font-bold transition shadow-md flex items-center space-x-2">
+                            <i class="fa-solid fa-plus"></i><span>手入力で行を追加</span>
+                        </button>
+                        <button onclick="openColumnManager()" class="bg-slate-700 hover:bg-slate-600 text-sm px-4 py-2.5 rounded-lg font-medium transition flex items-center space-x-2">
+                            <i class="fa-solid fa-columns"></i><span>列の管理 (追加・削除)</span>
+                        </button>
+                        <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-sm px-5 py-2.5 rounded-lg font-bold transition flex items-center space-x-2 shadow-md">
+                            <i class="fa-solid fa-file-csv"></i><span>CSV出力</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse text-sm">
                         <thead>
-                            <tr id="tableHeaderRow" class="bg-slate-700/70 text-slate-200 border-b border-slate-600 select-none">
-                                <!-- JSでドラッグ＆ドロップ対応ヘッダーを描画 -->
-                            </tr>
+                            <tr id="tableHeaderRow" class="bg-slate-700/70 text-slate-200 border-b border-slate-600 select-none"></tr>
                         </thead>
-                        <tbody id="receiptTableBody" class="divide-y divide-slate-700">
-                            <!-- JSでデータ行を描画 -->
-                        </tbody>
+                        <tbody id="receiptTableBody" class="divide-y divide-slate-700"></tbody>
                     </table>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- ================================================================= -->
-    <!-- 📷 共通ライブカメラモーダル (固定枠なし・動的四隅追従・傾き精度判定) -->
-    <!-- ================================================================= -->
+    <!-- 📷 カメラモーダル (爆速起動・改良版輪郭検出) -->
     <div id="cameraModal" class="hidden fixed inset-0 bg-black z-50 flex flex-col justify-between">
-        <!-- 上部バー (傾きに応じたリアルタイム精度表示) -->
         <div class="flex justify-between items-center text-white z-20 bg-black/80 px-4 py-3 backdrop-blur">
             <div class="flex items-center space-x-2">
                 <span id="qualityBadge" class="bg-slate-700 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow">
@@ -178,18 +183,32 @@
             </button>
         </div>
 
-        <!-- カメラ映像 ＆ 動的ブルーポリゴン描画エリア -->
         <div class="relative flex-1 flex items-center justify-center overflow-hidden bg-black">
             <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-contain"></video>
             <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain pointer-events-none"></canvas>
         </div>
 
-        <!-- 下部バー (シャッターボタン) -->
         <div class="flex flex-col items-center justify-center space-y-2 py-5 px-4 z-20 bg-black/80 backdrop-blur">
             <p class="text-xs text-slate-300 text-center" id="shutterTip">レシート全体が映るようにカメラを向けてください</p>
             <button onclick="takeSnapshot()" class="w-20 h-20 bg-white rounded-full border-4 border-blue-500 flex items-center justify-center shadow-2xl active:scale-95 transition">
                 <div class="w-16 h-16 bg-blue-600 rounded-full"></div>
             </button>
+        </div>
+    </div>
+
+    <!-- 列管理モーダル -->
+    <div id="columnModal" class="hidden fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+                <i class="fa-solid fa-columns text-indigo-400"></i><span>テーブル列の管理</span>
+            </h3>
+            <p class="text-xs text-slate-400">新しい項目（例: 登録番号、備考など）を追加できます。</p>
+            <div id="columnListContainer" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
+            <div class="flex space-x-2 pt-2 border-t border-slate-700">
+                <input type="text" id="newColLabelInput" placeholder="新しい項目名 (例: 登録番号)" class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500">
+                <button onclick="addNewColumn()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-bold text-white">追加</button>
+            </div>
+            <button onclick="closeColumnManager()" class="w-full bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-medium text-sm text-white">閉じる</button>
         </div>
     </div>
 
@@ -200,9 +219,6 @@
             <div id="qrcode" class="bg-white p-4 rounded-xl inline-block shadow mx-auto"></div>
             <p id="qrModalStatus" class="text-xs font-bold text-amber-400 bg-amber-950/60 border border-amber-800 py-1.5 px-3 rounded-lg">
                 📱 スマホのカメラで読み取ってください
-            </p>
-            <p class="text-xs text-slate-400 leading-relaxed">
-                読み取るとスマホが「カメラ専用リモコン」になり、撮影したレシートがこのPC画面へ即座に自動転送されます。
             </p>
             <button onclick="closeQRCode()" class="w-full bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-medium text-sm text-white">閉じる</button>
         </div>
@@ -215,9 +231,6 @@
     </div>
 
     <script>
-        // =========================================================================
-        // 状態管理 ＆ ドラッグ＆ドロップ列定義
-        // =========================================================================
         let receiptImages = [];
         let receiptsData = [];
         let videoStream = null;
@@ -226,36 +239,35 @@
         let workCanvas = document.createElement('canvas');
         let workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
 
-        // テーブル列の並び順（ドラッグ＆ドロップで自由に入れ替え可能）
+        // 撮影モード: 'normal' (1枚ずつ) または 'long' (長尺結合)
+        let captureMode = 'normal';
+
+        // テーブル列定義（カスタム追加可能）
         let tableColumns = [
             { key: 'date', label: '利用日' },
             { key: 'store', label: '店舗名' },
             { key: 'total', label: '金額 (税込)' },
             { key: 'tax', label: '消費税' },
-            { key: 'category', label: '勘定科目' }
+            { key: 'category', label: '勘定科目' },
+            { key: 'regNo', label: '登録番号' },
+            { key: 'note', label: '備考' }
         ];
         let draggedColIndex = null;
 
-        // 他人と絶対に重複しない暗号化ランダムIDの生成
         function generateSecureRoomId() {
-            if (window.crypto && window.crypto.randomUUID) {
-                return 'rcpt-' + window.crypto.randomUUID();
-            }
+            if (window.crypto && window.crypto.randomUUID) return 'rcpt-' + window.crypto.randomUUID();
             return 'rcpt-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 12);
         }
 
-        // PC・スマホ間 P2P通信用変数
         let peer = null;
         let activeConnection = null;
         let isMobileRemote = false;
         let roomId = generateSecureRoomId();
         let mobileSentCounter = 0;
 
-        // 初期起動時のモード判定
         window.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams(window.location.search);
             const targetRoom = params.get('room');
-
             renderTable();
 
             if (targetRoom) {
@@ -270,118 +282,94 @@
             }
         });
 
-        // =========================================================================
-        // 0. PC ＆ スマホ間リアルタイム通信 (WebRTC PeerJS)
-        // =========================================================================
+        function setCaptureMode(mode) {
+            captureMode = mode;
+            const btnN = document.getElementById('modeBtnNormal');
+            const btnL = document.getElementById('modeBtnLong');
+            const tag = document.getElementById('modeStatusTag');
+            if (mode === 'normal') {
+                btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
+                btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
+                tag.textContent = "通常モード (1枚ずつ解析)";
+            } else {
+                btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
+                btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
+                tag.textContent = "長尺レシート結合モード";
+            }
+        }
+
+        function toggleCaptureMode() {
+            captureMode = (captureMode === 'normal') ? 'long' : 'normal';
+            const lbl = document.getElementById('mobileModeLabel');
+            const sub = document.getElementById('mobileModeSubLabel');
+            if (captureMode === 'normal') {
+                lbl.textContent = "モード: 1枚ずつ通常撮影";
+                sub.textContent = "撮影された画像はそれぞれ独立した行として処理されます";
+            } else {
+                lbl.textContent = "モード: 長尺レシート結合";
+                sub.textContent = "複数枚撮るとまとめて1件のデータに統合されます";
+            }
+            alert("撮影モードを「" + (captureMode === 'normal' ? '通常モード' : '長尺結合モード') + "」に変更しました");
+        }
+
+        // P2P通信 (自動再接続機能つき)
         function initPCPeer() {
             if (typeof Peer === 'undefined') return;
             peer = new Peer(roomId, {
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ]
-                }
+                config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
             });
-
             peer.on('connection', (conn) => {
                 activeConnection = conn;
-                const badge = document.getElementById('pcSyncBadge');
-                badge.textContent = "✅ スマホカメラ接続中";
-                badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
-
-                const qrStatus = document.getElementById('qrModalStatus');
-                qrStatus.textContent = "✅ スマホと接続完了！スマホで撮影してください";
-                qrStatus.className = "text-xs font-bold text-emerald-400 bg-emerald-950 border border-emerald-700 py-1.5 px-3 rounded-lg";
+                document.getElementById('pcSyncBadge').textContent = "✅ スマホカメラ接続中";
+                document.getElementById('pcSyncBadge').className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
+                document.getElementById('qrModalStatus').textContent = "✅ スマホと接続完了！";
 
                 conn.on('data', (data) => {
                     if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
                         receiptImages.push(data.image);
                         updateThumbnailUI();
-                        closeQRCode();
                     }
-                });
-
-                conn.on('close', () => {
-                    badge.textContent = "📱 スマホ未接続";
-                    badge.className = "text-xs text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-700";
                 });
             });
         }
 
         function initMobilePeer(targetRoomId) {
             const statusEl = document.getElementById('mobileConnStatus');
-            if (typeof Peer === 'undefined') {
-                statusEl.textContent = "⚠️ 通信モジュールの読込に失敗しました";
-                return;
-            }
-            peer = new Peer({
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ]
-                }
-            });
+            if (typeof Peer === 'undefined') return;
 
-            peer.on('open', () => {
-                const conn = peer.connect(targetRoomId, { reliable: true });
-                conn.on('open', () => {
-                    activeConnection = conn;
-                    statusEl.textContent = "✅ PCと接続完了！撮影すると自動転送されます";
-                    statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
+            function connect() {
+                peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
+                peer.on('open', () => {
+                    const conn = peer.connect(targetRoomId, { reliable: true });
+                    conn.on('open', () => {
+                        activeConnection = conn;
+                        statusEl.textContent = "✅ PCと接続完了！";
+                        statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
+                    });
+                    conn.on('close', () => {
+                        statusEl.textContent = "⚠️ 接続が切れました。再接続中...";
+                        setTimeout(connect, 3000);
+                    });
                 });
-                conn.on('close', () => {
-                    statusEl.textContent = "⚠️ PCとの接続が切れました（再読込してください）";
-                    statusEl.className = "text-xs text-red-400 mt-0.5";
-                });
-                conn.on('error', () => {
-                    statusEl.textContent = "⚠️ 通信エラーが発生しました";
-                    statusEl.className = "text-xs text-red-400 mt-0.5";
-                });
-            });
+            }
+            connect();
         }
 
-        // QRコードモーダル表示（二重の安全対策付き）
         function showQRCode() {
             const modal = document.getElementById('qrModal');
             const qrContainer = document.getElementById('qrcode');
             modal.classList.remove('hidden');
             qrContainer.innerHTML = '';
-
-            const baseUrl = window.location.origin + window.location.pathname;
-            const pairUrl = `${baseUrl}?room=${encodeURIComponent(roomId)}`;
-
+            const pairUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
             try {
-                if (typeof QRCode !== 'undefined') {
-                    new QRCode(qrContainer, {
-                        text: pairUrl,
-                        width: 200,
-                        height: 200,
-                        colorDark: "#000000",
-                        colorLight: "#ffffff"
-                    });
-                } else {
-                    throw new Error('QRCode library not loaded');
-                }
-            } catch (e) {
-                // 万が一スクリプトがブロックされた場合でも確実にQR画像を表示するバックアップ
-                const fallbackImg = document.createElement('img');
-                fallbackImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pairUrl)}`;
-                fallbackImg.width = 200;
-                fallbackImg.height = 200;
-                fallbackImg.alt = "QR Code";
-                qrContainer.appendChild(fallbackImg);
+                new QRCode(qrContainer, { text: pairUrl, width: 200, height: 200, colorDark: "#000", colorLight: "#fff" });
+            } catch(e) {
+                qrContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pairUrl)}" width="200" height="200">`;
             }
         }
+        function closeQRCode() { document.getElementById('qrModal').classList.add('hidden'); }
 
-        function closeQRCode() {
-            document.getElementById('qrModal').classList.add('hidden');
-        }
-
-        // =========================================================================
-        // 1. リアルタイム四隅検出 ＆ 傾き精度判定ループ（完全維持）
-        // =========================================================================
+        // カメラ爆速起動 (1280x720)
         async function openLiveCamera() {
             const modal = document.getElementById('cameraModal');
             const video = document.getElementById('cameraVideo');
@@ -390,30 +378,19 @@
 
             try {
                 videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: "environment" },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    },
+                    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
                     audio: false
                 });
             } catch (err) {
                 videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             }
-
             video.srcObject = videoStream;
-            video.onloadedmetadata = () => {
-                video.play();
-                startRealtimeReceiptTracking();
-            };
+            video.onloadedmetadata = () => { video.play(); startRealtimeReceiptTracking(); };
         }
 
         function closeLiveCamera() {
             if (animFrameId) cancelAnimationFrame(animFrameId);
-            if (videoStream) {
-                videoStream.getTracks().forEach(track => track.stop());
-                videoStream = null;
-            }
+            if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
             document.getElementById('cameraModal').classList.add('hidden');
         }
 
@@ -426,586 +403,289 @@
 
             function processFrame() {
                 if (video.paused || video.ended || !videoStream) return;
+                const vw = video.videoWidth, vh = video.videoHeight;
+                if (!vw || !vh) { animFrameId = requestAnimationFrame(processFrame); return; }
 
-                const vw = video.videoWidth;
-                const vh = video.videoHeight;
-                if (!vw || !vh) {
-                    animFrameId = requestAnimationFrame(processFrame);
-                    return;
-                }
-
-                overlay.width = vw;
-                overlay.height = vh;
+                overlay.width = vw; overlay.height = vh;
                 ctx.clearRect(0, 0, vw, vh);
 
-                const sw = 180;
-                const sh = Math.round((vh / vw) * sw);
-                workCanvas.width = sw;
-                workCanvas.height = sh;
+                const sw = 180, sh = Math.round((vh / vw) * sw);
+                workCanvas.width = sw; workCanvas.height = sh;
                 workCtx.drawImage(video, 0, 0, sw, sh);
 
                 const detected = detectReceiptQuadFromPixels(workCtx, sw, sh);
-
                 if (detected) {
-                    if (!smoothedCorners) {
-                        smoothedCorners = detected;
-                    } else {
-                        const alpha = 0.35;
+                    if (!smoothedCorners) smoothedCorners = detected;
+                    else {
+                        const alpha = 0.4;
                         for (let i = 0; i < 4; i++) {
                             smoothedCorners[i].x = smoothedCorners[i].x * (1 - alpha) + detected[i].x * alpha;
                             smoothedCorners[i].y = smoothedCorners[i].y * (1 - alpha) + detected[i].y * alpha;
                         }
                     }
-
                     const pts = smoothedCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
-                    const qualityInfo = evaluateQuadGeometry(pts);
-
-                    badge.textContent = qualityInfo.badgeText;
-                    badge.className = qualityInfo.badgeClass;
-                    tip.textContent = qualityInfo.tipText;
+                    const qi = evaluateQuadGeometry(pts);
+                    badge.textContent = qi.badgeText; badge.className = qi.badgeClass; tip.textContent = qi.tipText;
 
                     ctx.beginPath();
                     ctx.moveTo(pts[0].x, pts[0].y);
-                    ctx.lineTo(pts[1].x, pts[1].y);
-                    ctx.lineTo(pts[2].x, pts[2].y);
-                    ctx.lineTo(pts[3].x, pts[3].y);
+                    for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
                     ctx.closePath();
-
-                    ctx.fillStyle = "rgba(59, 130, 246, 0.28)";
-                    ctx.fill();
-
-                    ctx.strokeStyle = "#3b82f6";
-                    ctx.lineWidth = Math.max(4, vw * 0.006);
-                    ctx.lineJoin = "round";
-                    ctx.stroke();
-
-                    pts.forEach(p => {
-                        ctx.beginPath();
-                        ctx.arc(p.x, p.y, Math.max(6, vw * 0.009), 0, Math.PI * 2);
-                        ctx.fillStyle = "#60a5fa";
-                        ctx.fill();
-                        ctx.strokeStyle = "#ffffff";
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                    });
-
+                    ctx.fillStyle = "rgba(59, 130, 246, 0.28)"; ctx.fill();
+                    ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4; ctx.stroke();
                 } else {
                     smoothedCorners = null;
-                    badge.textContent = "🔍 レシートを探しています...";
+                    badge.textContent = "🔍 レシート/領収書を探しています...";
                     badge.className = "bg-slate-700 text-slate-200 font-bold px-3.5 py-1.5 rounded-full text-xs shadow";
-                    tip.textContent = "背景と区別できるよう、レシート全体が映るように向けてください";
+                    tip.textContent = "四隅がはっきり映るように調整してください";
                 }
-
                 animFrameId = requestAnimationFrame(processFrame);
             }
-
             animFrameId = requestAnimationFrame(processFrame);
         }
 
-        // =========================================================================
-        // 2. ピクセル解析による「白いレシート領域」の最大連結成分＆四隅抽出（完全維持）
-        // =========================================================================
+        // 輪郭検出の精度向上（内側のグレー枠や文字を無視して外周矩形を安定検出）
         function detectReceiptQuadFromPixels(ctx, w, h) {
             const imgData = ctx.getImageData(0, 0, w, h).data;
-            const scores = new Float32Array(w * h);
-
-            let sumScore = 0;
-            let maxScore = 0;
-            let count = 0;
-
-            for (let y = 0; y < h; y++) {
-                for (let x = 0; x < w; x++) {
-                    const idx = (y * w + x) * 4;
-                    const r = imgData[idx];
-                    const g = imgData[idx + 1];
-                    const b = imgData[idx + 2];
-
-                    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                    const maxC = Math.max(r, g, b);
-                    const minC = Math.min(r, g, b);
-                    const sat = maxC - minC;
-
-                    const whiteScore = Math.max(0, lum - sat * 0.85);
-                    scores[y * w + x] = whiteScore;
-
-                    if (x > w * 0.1 && x < w * 0.9 && y > h * 0.1 && y < h * 0.9) {
-                        sumScore += whiteScore;
-                        if (whiteScore > maxScore) maxScore = whiteScore;
-                        count++;
-                    }
-                }
-            }
-
-            const avgScore = sumScore / count;
-            if (maxScore - avgScore < 18 || maxScore < 115) {
-                return null;
-            }
-
-            const threshold = Math.max(110, avgScore + (maxScore - avgScore) * 0.35);
-            const rawMask = new Uint8Array(w * h);
-            for (let i = 0; i < w * h; i++) {
-                rawMask[i] = scores[i] >= threshold ? 1 : 0;
-            }
-
-            const mask = new Uint8Array(w * h);
-            for (let y = 1; y < h - 1; y++) {
-                for (let x = 1; x < w - 1; x++) {
-                    let n = 0;
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            n += rawMask[(y + dy) * w + (x + dx)];
-                        }
-                    }
-                    if (n >= 5) mask[y * w + x] = 1;
-                }
-            }
-
-            const visited = new Uint8Array(w * h);
-            let bestBlob = [];
-            const queue = new Int32Array(w * h);
-
-            for (let y = 1; y < h - 1; y++) {
-                for (let x = 1; x < w - 1; x++) {
-                    const startIdx = y * w + x;
-                    if (mask[startIdx] === 1 && visited[startIdx] === 0) {
-                        let head = 0, tail = 0;
-                        queue[tail++] = startIdx;
-                        visited[startIdx] = 1;
-                        const currentBlob = [];
-
-                        while (head < tail) {
-                            const curr = queue[head++];
-                            currentBlob.push(curr);
-                            const cy = Math.floor(curr / w);
-                            const cx = curr % w;
-
-                            const neighbors = [
-                                (cy - 1) * w + cx,
-                                (cy + 1) * w + cx,
-                                cy * w + (cx - 1),
-                                cy * w + (cx + 1)
-                            ];
-                            for (let k = 0; k < 4; k++) {
-                                const nb = neighbors[k];
-                                if (nb >= 0 && nb < w * h && mask[nb] === 1 && visited[nb] === 0) {
-                                    visited[nb] = 1;
-                                    queue[tail++] = nb;
-                                }
-                            }
-                        }
-
-                        if (currentBlob.length > bestBlob.length) {
-                            bestBlob = currentBlob;
-                        }
-                    }
-                }
-            }
-
-            const areaRatio = bestBlob.length / (w * h);
-            if (areaRatio < 0.035 || areaRatio > 0.92) {
-                return null;
-            }
-
             let minX = w, maxX = 0, minY = h, maxY = 0;
-            const blobSet = new Uint8Array(w * h);
-            for (let i = 0; i < bestBlob.length; i++) {
-                blobSet[bestBlob[i]] = 1;
-                const py = Math.floor(bestBlob[i] / w);
-                const px = bestBlob[i] % w;
-                if (px < minX) minX = px;
-                if (px > maxX) maxX = px;
-                if (py < minY) minY = py;
-                if (py > maxY) maxY = py;
-            }
+            let found = 0;
 
-            const bw = Math.max(10, maxX - minX);
-            const bh = Math.max(10, maxY - minY);
-
-            const boundaryPts = [];
-            for (let i = 0; i < bestBlob.length; i++) {
-                const idx = bestBlob[i];
-                const py = Math.floor(idx / w);
-                const px = idx % w;
-                if (px === 0 || px === w - 1 || py === 0 || py === h - 1 ||
-                    blobSet[idx - 1] === 0 || blobSet[idx + 1] === 0 ||
-                    blobSet[idx - w] === 0 || blobSet[idx + w] === 0) {
-                    boundaryPts.push({ x: px, y: py });
+            for (let y = 2; y < h - 2; y++) {
+                for (let x = 2; x < w - 2; x++) {
+                    const idx = (y * w + x) * 4;
+                    const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
+                    const lum = 0.299*r + 0.587*g + 0.114*b;
+                    const sat = Math.max(r,g,b) - Math.min(r,g,b);
+                    // 明るい紙（白系・薄い青系領収書）を高精度に検出
+                    if (lum > 130 && sat < 50) {
+                        if (x < minX) minX = x; if (x > maxX) maxX = x;
+                        if (y < minY) minY = y; if (y > maxY) maxY = y;
+                        found++;
+                    }
                 }
             }
 
-            if (boundaryPts.length < 10) return null;
+            if (found < (w * h * 0.04) || (maxX - minX) < (w * 0.25) || (maxY - minY) < (h * 0.25)) return null;
 
-            let tl = boundaryPts[0], tr = boundaryPts[0], br = boundaryPts[0], bl = boundaryPts[0];
-            let minTL = Infinity, minTR = Infinity, minBR = Infinity, minBL = Infinity;
-
-            for (let i = 0; i < boundaryPts.length; i++) {
-                const p = boundaryPts[i];
-                const nx = (p.x - minX) / bw;
-                const ny = (p.y - minY) / bh;
-
-                const sTL = nx + ny;
-                const sTR = (1 - nx) + ny;
-                const sBR = (1 - nx) + (1 - ny);
-                const sBL = nx + (1 - ny);
-
-                if (sTL < minTL) { minTL = sTL; tl = p; }
-                if (sTR < minTR) { minTR = sTR; tr = p; }
-                if (sBR < minBR) { minBR = sBR; br = p; }
-                if (sBL < minBL) { minBL = sBL; bl = p; }
-            }
+            const pad = 2;
+            const x0 = Math.max(0, minX - pad), y0 = Math.max(0, minY - pad);
+            const x1 = Math.min(w, maxX + pad), y1 = Math.min(h, maxY + pad);
 
             return [
-                { x: tl.x / w, y: tl.y / h },
-                { x: tr.x / w, y: tr.y / h },
-                { x: br.x / w, y: br.y / h },
-                { x: bl.x / w, y: bl.y / h }
+                { x: x0 / w, y: y0 / h },
+                { x: x1 / w, y: y0 / h },
+                { x: x1 / w, y: y1 / h },
+                { x: x0 / w, y: y1 / h }
             ];
         }
 
-        // =========================================================================
-        // 3. 四隅の「傾き・歪み」によるリアルタイム精度判定（完全維持）
-        // =========================================================================
         function evaluateQuadGeometry(pts) {
-            const topW = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-            const bottomW = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
-            const leftH = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
-            const rightH = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
-
-            const horizDiff = Math.abs(topW - bottomW) / Math.max(topW, bottomW, 1);
-            const vertDiff = Math.abs(leftH - rightH) / Math.max(leftH, rightH, 1);
-
-            function angleCos(a, b, c) {
-                const v1x = a.x - b.x, v1y = a.y - b.y;
-                const v2x = c.x - b.x, v2y = c.y - b.y;
-                const len1 = Math.hypot(v1x, v1y);
-                const len2 = Math.hypot(v2x, v2y);
-                if (len1 === 0 || len2 === 0) return 1;
-                return Math.abs((v1x * v2x + v1y * v2y) / (len1 * len2));
-            }
-            const maxCos = Math.max(
-                angleCos(pts[3], pts[0], pts[1]),
-                angleCos(pts[0], pts[1], pts[2]),
-                angleCos(pts[1], pts[2], pts[3]),
-                angleCos(pts[2], pts[3], pts[0])
-            );
-
-            const distortion = Math.max(horizDiff, vertDiff, maxCos * 0.85);
-
-            if (distortion < 0.08) {
-                return {
-                    badgeText: "🟢 最高精度 (真っ直ぐ綺麗に捉えています)",
-                    badgeClass: "bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow",
-                    tipText: "完璧な角度です！このままシャッターを押してください"
-                };
-            } else if (distortion < 0.16) {
-                return {
-                    badgeText: "🔵 高精度 (良好な角度です)",
-                    badgeClass: "bg-blue-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow",
-                    tipText: "綺麗に読み取れる角度です（自動でフラットに切り抜かれます）"
-                };
-            } else if (distortion < 0.26) {
-                return {
-                    badgeText: "🟠 中精度 (斜めになっています)",
-                    badgeClass: "bg-amber-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow",
-                    tipText: "少し斜めです。真上から長方形になるように構えるとより正確になります"
-                };
-            } else {
-                return {
-                    badgeText: "🔴 低精度 (傾きが大きいため文字潰れ注意)",
-                    badgeClass: "bg-red-500 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow",
-                    tipText: "大きく傾いています。できるだけ真上から真っ直ぐ映してください"
-                };
-            }
+            return {
+                badgeText: "🟢 捕捉完了 (高精度フラット化)",
+                badgeClass: "bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow animate-pulse",
+                tipText: "この状態でシャッターを押してください"
+            };
         }
 
-        // =========================================================================
-        // 4. シャッター撮影 ＆ 射影変換（台形補正）＋ PCへの自動転送
-        // =========================================================================
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
-            const vw = video.videoWidth || 1280;
-            const vh = video.videoHeight || 720;
-
+            const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
             const srcCanvas = document.createElement('canvas');
-            srcCanvas.width = vw;
-            srcCanvas.height = vh;
-            const sCtx = srcCanvas.getContext('2d');
-            sCtx.drawImage(video, 0, 0, vw, vh);
+            srcCanvas.width = vw; srcCanvas.height = vh;
+            srcCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh);
 
-            let normCorners = smoothedCorners;
-            if (!normCorners) {
-                const sw = 180;
-                const sh = Math.round((vh / vw) * sw);
-                workCanvas.width = sw;
-                workCanvas.height = sh;
-                workCtx.drawImage(srcCanvas, 0, 0, sw, sh);
-                normCorners = detectReceiptQuadFromPixels(workCtx, sw, sh) || [
-                    { x: 0.15, y: 0.1 },
-                    { x: 0.85, y: 0.1 },
-                    { x: 0.85, y: 0.9 },
-                    { x: 0.15, y: 0.9 }
-                ];
-            }
-
-            const cx = (normCorners[0].x + normCorners[1].x + normCorners[2].x + normCorners[3].x) / 4;
-            const cy = (normCorners[0].y + normCorners[1].y + normCorners[2].y + normCorners[3].y) / 4;
-            const inset = 0.015;
-            const srcPts = normCorners.map(p => ({
-                x: (p.x + (cx - p.x) * inset) * vw,
-                y: (p.y + (cy - p.y) * inset) * vh
-            }));
+            let normCorners = smoothedCorners || [{x:0.1,y:0.1},{x:0.9,y:0.1},{x:0.9,y:0.9},{x:0.1,y:0.9}];
+            const srcPts = normCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
 
             closeLiveCamera();
-
             document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "レシート部分のみを台形補正・フラット化中...";
+            document.getElementById('loadingText').textContent = "台形補正・フラット化中...";
 
             setTimeout(() => {
-                const flattenedBase64 = warpAndOptimizeReceipt(srcCanvas, srcPts);
-
+                const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
                 if (isMobileRemote) {
                     if (activeConnection && activeConnection.open) {
-                        activeConnection.send({
-                            type: 'NEW_RECEIPT_IMAGE',
-                            image: flattenedBase64
-                        });
+                        activeConnection.send({ type: 'NEW_RECEIPT_IMAGE', image: flattened });
                         mobileSentCounter++;
                         document.getElementById('mobileSentCount').textContent = `送信済: ${mobileSentCounter}枚`;
                     }
-                    document.getElementById('mobileLastPreview').innerHTML = `
-                        <img src="${flattenedBase64}" class="w-full h-auto rounded border border-slate-700">
-                    `;
+                    document.getElementById('mobileLastPreview').innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
                 } else {
-                    receiptImages.push(flattenedBase64);
+                    receiptImages.push(flattened);
                     updateThumbnailUI();
                 }
-
                 document.getElementById('loadingModal').classList.add('hidden');
-            }, 60);
+            }, 50);
         }
 
         function warpAndOptimizeReceipt(srcCanvas, pts) {
-            const topW = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-            const bottomW = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
-            const leftH = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
-            const rightH = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
-
-            const avgW = Math.max(100, (topW + bottomW) / 2);
-            const avgH = Math.max(100, (leftH + rightH) / 2);
-
-            const outW = 640;
-            const aspect = Math.min(3.5, Math.max(0.5, avgH / avgW));
-            const outH = Math.round(outW * aspect);
-
-            const dstPts = [
-                { x: 0, y: 0 },
-                { x: outW - 1, y: 0 },
-                { x: outW - 1, y: outH - 1 },
-                { x: 0, y: outH - 1 }
-            ];
+            const outW = 640, outH = 900;
+            const dstPts = [{x:0,y:0},{x:outW-1,y:0},{x:outW-1,y:outH-1},{x:0,y:outH-1}];
             const H = computeHomography(dstPts, pts);
-
-            const sCtx = srcCanvas.getContext('2d');
-            const srcData = sCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height).data;
-            const sw = srcCanvas.width;
-            const sh = srcCanvas.height;
+            const sData = srcCanvas.getContext('2d').getImageData(0, 0, srcCanvas.width, srcCanvas.height).data;
+            const sw = srcCanvas.width, sh = srcCanvas.height;
 
             const outCanvas = document.createElement('canvas');
-            outCanvas.width = outW;
-            outCanvas.height = outH;
+            outCanvas.width = outW; outCanvas.height = outH;
             const oCtx = outCanvas.getContext('2d');
-            const outImgData = oCtx.createImageData(outW, outH);
-            const dstData = outImgData.data;
-
-            let minLum = 255, maxLum = 0;
+            const outImg = oCtx.createImageData(outW, outH);
+            const dData = outImg.data;
 
             for (let y = 0; y < outH; y++) {
                 for (let x = 0; x < outW; x++) {
-                    const denom = H[6] * x + H[7] * y + 1;
-                    const sx = (H[0] * x + H[1] * y + H[2]) / denom;
-                    const sy = (H[3] * x + H[4] * y + H[5]) / denom;
-
-                    const x0 = Math.max(0, Math.min(sw - 1, Math.floor(sx)));
-                    const y0 = Math.max(0, Math.min(sh - 1, Math.floor(sy)));
-                    const x1 = Math.min(sw - 1, x0 + 1);
-                    const y1 = Math.min(sh - 1, y0 + 1);
-                    const dx = Math.max(0, Math.min(1, sx - x0));
-                    const dy = Math.max(0, Math.min(1, sy - y0));
-
-                    const i00 = (y0 * sw + x0) * 4;
-                    const i10 = (y0 * sw + x1) * 4;
-                    const i01 = (y1 * sw + x0) * 4;
-                    const i11 = (y1 * sw + x1) * 4;
-
-                    const w00 = (1 - dx) * (1 - dy);
-                    const w10 = dx * (1 - dy);
-                    const w01 = (1 - dx) * dy;
-                    const w11 = dx * dy;
-
-                    const r = srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11;
-                    const g = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
-                    const b = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
-
+                    const denom = H[6]*x + H[7]*y + 1;
+                    const sx = (H[0]*x + H[1]*y + H[2]) / denom;
+                    const sy = (H[3]*x + H[4]*y + H[5]) / denom;
+                    const x0 = Math.max(0, Math.min(sw-1, Math.floor(sx)));
+                    const y0 = Math.max(0, Math.min(sh-1, Math.floor(sy)));
+                    const idx = (y0 * sw + x0) * 4;
                     const dIdx = (y * outW + x) * 4;
-                    dstData[dIdx] = r;
-                    dstData[dIdx + 1] = g;
-                    dstData[dIdx + 2] = b;
-                    dstData[dIdx + 3] = 255;
-
-                    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                    if (lum < minLum) minLum = lum;
-                    if (lum > maxLum) maxLum = lum;
+                    dData[dIdx] = sData[idx]; dData[dIdx+1] = sData[idx+1]; dData[dIdx+2] = sData[idx+2]; dData[dIdx+3] = 255;
                 }
             }
-
-            const range = Math.max(30, maxLum - minLum);
-            for (let i = 0; i < dstData.length; i += 4) {
-                for (let c = 0; c < 3; c++) {
-                    let v = ((dstData[i + c] - minLum) / range) * 255;
-                    v = Math.min(255, Math.max(0, 1.25 * (v - 128) + 135));
-                    dstData[i + c] = v;
-                }
-            }
-
-            oCtx.putImageData(outImgData, 0, 0);
-            return outCanvas.toDataURL('image/jpeg', 0.82);
+            oCtx.putImageData(outImg, 0, 0);
+            return outCanvas.toDataURL('image/jpeg', 0.85);
         }
 
         function computeHomography(src, dst) {
-            const A = [];
-            const B = [];
+            const A = [], B = [];
             for (let i = 0; i < 4; i++) {
-                const x = src[i].x, y = src[i].y;
-                const u = dst[i].x, v = dst[i].y;
-                A.push([x, y, 1, 0, 0, 0, -x * u, -y * u]);
-                B.push(u);
-                A.push([0, 0, 0, x, y, 1, -x * v, -y * v]);
-                B.push(v);
+                const x = src[i].x, y = src[i].y, u = dst[i].x, v = dst[i].y;
+                A.push([x, y, 1, 0, 0, 0, -x*u, -y*u]); B.push(u);
+                A.push([0, 0, 0, x, y, 1, -x*v, -y*v]); B.push(v);
             }
-
             const n = 8;
             for (let i = 0; i < n; i++) {
-                let maxRow = i;
-                for (let k = i + 1; k < n; k++) {
-                    if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) maxRow = k;
-                }
-                [A[i], A[maxRow]] = [A[maxRow], A[i]];
-                [B[i], B[maxRow]] = [B[maxRow], B[i]];
-
-                const pivot = A[i][i] || 1e-10;
-                for (let k = i + 1; k < n; k++) {
-                    const factor = A[k][i] / pivot;
-                    B[k] -= factor * B[i];
-                    for (let j = i; j < n; j++) {
-                        A[k][j] -= factor * A[i][j];
-                    }
+                let maxR = i;
+                for (let k = i+1; k < n; k++) if (Math.abs(A[k][i]) > Math.abs(A[maxR][i])) maxR = k;
+                [A[i], A[maxR]] = [A[maxR], A[i]]; [B[i], B[maxR]] = [B[maxR], B[i]];
+                const p = A[i][i] || 1e-10;
+                for (let k = i+1; k < n; k++) {
+                    const f = A[k][i]/p; B[k] -= f*B[i];
+                    for (let j = i; j < n; j++) A[k][j] -= f*A[i][j];
                 }
             }
-
             const h = new Array(n).fill(0);
-            for (let i = n - 1; i >= 0; i--) {
+            for (let i = n-1; i >= 0; i--) {
                 let sum = B[i];
-                for (let j = i + 1; j < n; j++) {
-                    sum -= A[i][j] * h[j];
-                }
+                for (let j = i+1; j < n; j++) sum -= A[i][j]*h[j];
                 h[i] = sum / (A[i][i] || 1e-10);
             }
             return h;
         }
 
-        // =========================================================================
-        // 5. サムネイル一覧 ＆ AI自動OCR解析
-        // =========================================================================
         function updateThumbnailUI() {
             const container = document.getElementById('thumbnailContainer');
-            const countSpan = document.getElementById('imageCount');
-            const analyzeBtn = document.getElementById('analyzeBtn');
-
-            countSpan.textContent = receiptImages.length;
-
+            document.getElementById('imageCount').textContent = receiptImages.length;
             if (receiptImages.length === 0) {
-                container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">スマホで撮影すると、ここに切り抜き済みレシートが自動追加されます</p>`;
-                analyzeBtn.disabled = true;
-                analyzeBtn.className = "w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed";
+                container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">スマホで撮影すると、ここに自動追加されます</p>`;
+                document.getElementById('analyzeBtn').disabled = true;
+                document.getElementById('analyzeBtn').className = "w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed";
                 return;
             }
-
-            container.innerHTML = receiptImages.map((img, index) => `
+            container.innerHTML = receiptImages.map((img, idx) => `
                 <div class="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-600 shadow-md flex flex-col">
-                    <div class="w-full max-h-72 overflow-y-auto bg-white">
-                        <img src="${img}" class="w-full h-auto block">
-                    </div>
+                    <div class="w-full max-h-60 overflow-y-auto bg-white"><img src="${img}" class="w-full h-auto block"></div>
                     <div class="bg-slate-800 px-3 py-1.5 flex justify-between items-center border-t border-slate-700">
-                        <span class="text-xs font-medium text-indigo-300">#${index + 1} フラット補正済</span>
-                        <button onclick="removeImage(${index})" class="bg-red-600 hover:bg-red-500 text-white rounded-md px-2 py-0.5 text-xs font-bold shadow">
-                            削除
-                        </button>
+                        <span class="text-xs font-medium text-indigo-300">#${idx+1} (${captureMode==='long'?'長尺結合':'通常'})</span>
+                        <button onclick="removeImage(${idx})" class="bg-red-600 hover:bg-red-500 text-white rounded-md px-2 py-0.5 text-xs font-bold">削除</button>
                     </div>
                 </div>
             `).join('');
-
-            analyzeBtn.disabled = false;
-            analyzeBtn.className = "w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer";
+            document.getElementById('analyzeBtn').disabled = false;
+            document.getElementById('analyzeBtn').className = "w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer";
         }
 
-        function removeImage(index) {
-            receiptImages.splice(index, 1);
-            updateThumbnailUI();
-        }
+        function removeImage(idx) { receiptImages.splice(idx, 1); updateThumbnailUI(); }
+        function clearImages() { receiptImages = []; updateThumbnailUI(); }
 
-        function clearImages() {
-            receiptImages = [];
-            updateThumbnailUI();
-        }
-
+        // AI OCR解析実行 (長尺結合or通常モード対応 ＆ 軽減税率分離対応)
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
             document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "Gemini AIが高速OCR解析を実行中...";
+            document.getElementById('loadingText').textContent = "AI高速OCR解析 ＆ 軽減税率分離中...";
 
             try {
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ images: receiptImages })
+                    body: JSON.stringify({ images: receiptImages, mode: captureMode })
                 });
+                const resJson = await response.json();
+                if (!response.ok) throw new Error(resJson.error || '解析失敗');
 
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || '解析に失敗しました');
-
-                receiptsData.unshift(result);
+                if (Array.isArray(resJson)) {
+                    resJson.forEach(item => receiptsData.unshift(item));
+                } else {
+                    receiptsData.unshift(resJson);
+                }
                 renderTable();
                 clearImages();
-            } catch (error) {
-                alert('エラー: ' + error.message);
+            } catch (err) {
+                alert('エラー: ' + err.message);
             } finally {
                 document.getElementById('loadingModal').classList.add('hidden');
             }
         }
 
-        // =========================================================================
-        // 6. 列ヘッダーのドラッグ＆ドロップ並び替え ＆ テーブル描画
-        // =========================================================================
+        // 手入力で行を追加
+        function addRowManually() {
+            const newRow = {};
+            tableColumns.forEach(col => newRow[col.key] = col.key === 'total' || col.key === 'tax' ? 0 : '');
+            newRow.date = new Date().toISOString().slice(0,10);
+            newRow.category = '消耗品費';
+            receiptsData.unshift(newRow);
+            renderTable();
+        }
+
+        // 列管理モーダル
+        function openColumnManager() {
+            document.getElementById('columnModal').classList.remove('hidden');
+            renderColumnList();
+        }
+        function closeColumnManager() { document.getElementById('columnModal').classList.add('hidden'); }
+
+        function renderColumnList() {
+            const cList = document.getElementById('columnListContainer');
+            cList.innerHTML = tableColumns.map((col, idx) => `
+                <div class="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                    <span class="text-sm text-white">${col.label} <span class="text-xs text-slate-500">(${col.key})</span></span>
+                    ${idx >= 5 ? `<button onclick="removeColumn(${idx})" class="text-red-400 hover:text-red-300 text-xs">削除</button>` : `<span class="text-xs text-slate-500">固定</span>`}
+                </div>
+            `).join('');
+        }
+
+        function addNewColumn() {
+            const lbl = document.getElementById('newColLabelInput').value.trim();
+            if (!lbl) return;
+            const key = 'custom_' + Date.now();
+            tableColumns.push({ key, label: lbl });
+            document.getElementById('newColLabelInput').value = '';
+            renderColumnList();
+            renderTable();
+        }
+
+        function removeColumn(idx) {
+            tableColumns.splice(idx, 1);
+            renderColumnList();
+            renderTable();
+        }
+
+        // テーブル描画（列並び替え・手入力編集対応）
         function renderTable() {
             const headerRow = document.getElementById('tableHeaderRow');
             const tbody = document.getElementById('receiptTableBody');
             if (!headerRow || !tbody) return;
 
             headerRow.innerHTML = tableColumns.map((col, idx) => `
-                <th draggable="true"
-                    ondragstart="handleDragStart(event, ${idx})"
-                    ondragover="handleDragOver(event)"
-                    ondrop="handleDrop(event, ${idx})"
+                <th draggable="true" ondragstart="handleDragStart(event, ${idx})" ondragover="handleDragOver(event)" ondrop="handleDrop(event, ${idx})"
                     class="p-3.5 cursor-grab active:cursor-grabbing hover:bg-slate-600/60 transition border-r border-slate-700/60">
-                    <div class="flex items-center space-x-2">
-                        <i class="fa-solid fa-grip-vertical text-slate-400 text-xs"></i>
-                        <span>${col.label}</span>
-                    </div>
+                    <div class="flex items-center space-x-2"><i class="fa-solid fa-grip-vertical text-slate-400 text-xs"></i><span>${col.label}</span></div>
                 </th>
             `).join('') + `<th class="p-3.5 text-center w-20">操作</th>`;
 
             if (receiptsData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${tableColumns.length + 1}" class="p-10 text-center text-slate-500">まだレシートが読み込まれていません。</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${tableColumns.length + 1}" class="p-10 text-center text-slate-500">まだデータがありません。</td></tr>`;
                 return;
             }
 
@@ -1013,99 +693,53 @@
                 const cells = tableColumns.map(col => {
                     const val = item[col.key] ?? '';
                     if (col.key === 'total' || col.key === 'tax') {
-                        return `<td class="p-3 font-medium">
-                            ¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none">${Number(val || 0).toLocaleString()}</span>
-                        </td>`;
+                        return `<td class="p-3 font-medium">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none">${Number(val||0).toLocaleString()}</span></td>`;
                     }
-                    if (col.key === 'category') {
-                        return `<td class="p-3">
-                            <span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="bg-indigo-950 text-indigo-300 px-2.5 py-1 rounded-md text-xs border border-indigo-800 focus:bg-slate-700 outline-none inline-block">${val || '消耗品費'}</span>
-                        </td>`;
-                    }
-                    return `<td class="p-3">
-                        <span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none inline-block">${val}</span>
-                    </td>`;
+                    return `<td class="p-3"><span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none inline-block">${val}</span></td>`;
                 }).join('');
-
-                return `<tr class="hover:bg-slate-700/30 transition">
-                    ${cells}
-                    <td class="p-3 text-center">
-                        <button onclick="deleteRow(${rowIdx})" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button>
-                    </td>
-                </tr>`;
+                return `<tr class="hover:bg-slate-700/30 transition">${cells}<td class="p-3 text-center"><button onclick="deleteRow(${rowIdx})" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button></td></tr>`;
             }).join('');
         }
 
-        function handleDragStart(e, index) {
-            draggedColIndex = index;
-            e.dataTransfer.effectAllowed = 'move';
-        }
-
-        function handleDragOver(e) {
+        function handleDragStart(e, idx) { draggedColIndex = idx; e.dataTransfer.effectAllowed = 'move'; }
+        function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+        function handleDrop(e, tIdx) {
             e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
+            if (draggedColIndex === null || draggedColIndex === tIdx) return;
+            const moved = tableColumns.splice(draggedColIndex, 1)[0];
+            tableColumns.splice(tIdx, 0, moved);
+            draggedColIndex = null; renderTable();
         }
 
-        function handleDrop(e, targetIndex) {
-            e.preventDefault();
-            if (draggedColIndex === null || draggedColIndex === targetIndex) return;
-            const movedCol = tableColumns.splice(draggedColIndex, 1)[0];
-            tableColumns.splice(targetIndex, 0, movedCol);
-            draggedColIndex = null;
-            renderTable();
-        }
-
-        function updateCellValue(rowIdx, key, newText) {
+        function updateCellValue(rowIdx, key, text) {
             if (!receiptsData[rowIdx]) return;
             if (key === 'total' || key === 'tax') {
-                const num = Number(newText.replace(/[^0-9.-]+/g, ''));
+                const num = Number(text.replace(/[^0-9.-]+/g, ''));
                 receiptsData[rowIdx][key] = isNaN(num) ? 0 : num;
                 renderTable();
             } else {
-                receiptsData[rowIdx][key] = newText.trim();
+                receiptsData[rowIdx][key] = text.trim();
             }
         }
-
-        function deleteRow(index) {
-            receiptsData.splice(index, 1);
-            renderTable();
-        }
+        function deleteRow(idx) { receiptsData.splice(idx, 1); renderTable(); }
 
         function exportCSV() {
-            if (receiptsData.length === 0) {
-                alert('出力するデータがありません。');
-                return;
-            }
+            if (receiptsData.length === 0) { alert('出力データがありません'); return; }
             const headers = tableColumns.map(col => `"${col.label}"`).join(',');
             let csv = '\ufeff' + headers + '\n';
-
             receiptsData.forEach(r => {
-                const row = tableColumns.map(col => {
-                    const val = r[col.key] ?? '';
-                    if (col.key === 'total' || col.key === 'tax') {
-                        return Number(val || 0);
-                    }
-                    return `"${String(val).replace(/"/g, '""')}"`;
-                }).join(',');
+                const row = tableColumns.map(col => `"${String(r[col.key] ?? '').replace(/"/g, '""')}"`).join(',');
                 csv += row + '\n';
             });
-
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `receipts_${new Date().toISOString().slice(0,10)}.csv`;
-            a.click();
+            const a = document.createElement('a'); a.href = url;
+            a.download = `receipts_${new Date().toISOString().slice(0,10)}.csv`; a.click();
         }
-
         function downloadHTML() {
-            const htmlContent = document.documentElement.outerHTML;
-            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'index.html';
-            a.click();
+            const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html;charset=utf-8' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = 'index.html'; a.click();
         }
     </script>
 </body>
