@@ -6,6 +6,8 @@
     <title>レシートAIクラウド - プロフェッショナル</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <!-- OpenCV.jsの読み込み（自動台形補正用） -->
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady()" onerror="onOpenCvError()"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
@@ -17,7 +19,7 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
-                <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">台形補正・長尺対応版</span>
+                <span id="cvStatus" class="text-xs text-amber-400 bg-amber-950 px-2 py-0.5 rounded-full border border-amber-800">AIエンジン準備中...</span>
             </div>
         </div>
         <div class="flex items-center space-x-3">
@@ -37,18 +39,18 @@
                 <div>
                     <h2 class="text-lg font-semibold flex items-center space-x-2">
                         <i class="fa-solid fa-camera text-indigo-400"></i>
-                        <span>レシート撮影・台形補正 ＆ 複数枚追加</span>
+                        <span>自動台形補正・長尺レシート撮影</span>
                     </h2>
-                    <p class="text-xs text-slate-400 mt-1">撮影後、四隅を合わせて台形補正（切り抜き）を行います。長尺は何度でも追加可能です。</p>
+                    <p class="text-xs text-slate-400 mt-1">撮影するだけでプログラムが自動でレシートを切り抜き・補正します。長尺は何度でも追加可能です。</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 <!-- 撮影ボタン -->
-                <div class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50" onclick="document.getElementById('receiptInput').click()">
+                <div id="dropZone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50" onclick="triggerFileInput()">
                     <i class="fa-solid fa-cloud-arrow-up text-4xl text-indigo-400 mb-3"></i>
                     <p class="font-medium">スマホカメラで撮影 / 画像を選択</p>
-                    <p class="text-xs text-slate-400 mt-1">JPEG, PNG対応</p>
+                    <p class="text-xs text-slate-400 mt-1">自動で傾き補正・切り抜きが行われます</p>
                     <input type="file" id="receiptInput" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelect(event)">
                 </div>
 
@@ -56,7 +58,7 @@
                 <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
                     <div class="flex justify-between items-center">
                         <p class="text-sm font-medium text-indigo-300">
-                            <i class="fa-solid fa-images mr-1"></i> 補正済み画像一覧 (<span id="imageCount">0</span>枚)
+                            <i class="fa-solid fa-images mr-1"></i> 自動補正済み画像一覧 (<span id="imageCount">0</span>枚)
                         </p>
                         <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
                     </div>
@@ -106,30 +108,12 @@
         </section>
     </main>
 
-    <!-- 台形補正モーダル (Googleドライブ風 四隅調整UI) -->
-    <div id="cropModal" class="hidden fixed inset-0 bg-black/90 flex flex-col items-center justify-center p-4 z-50 space-y-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 max-w-xl w-full space-y-3 shadow-2xl flex flex-col items-center">
-            <div class="flex justify-between w-full items-center">
-                <h3 class="text-sm font-bold text-indigo-300"><i class="fa-solid fa-crop mr-1"></i> レシートの四隅を合わせてください（自動補正）</h3>
-                <button onclick="closeCropModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
-            </div>
-            <div class="relative bg-black rounded-lg overflow-hidden border border-slate-700 flex justify-center max-h-[60vh]">
-                <canvas id="cropCanvas" class="max-w-full max-h-[55vh] object-contain cursor-crosshair"></canvas>
-            </div>
-            <p class="text-xs text-slate-400 text-center">四隅の赤い点をドラッグしてレシートの端に合わせ、下のボタンを押してください。</p>
-            <div class="flex space-x-3 w-full">
-                <button onclick="closeCropModal()" class="w-1/2 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-medium text-sm">キャンセル</button>
-                <button onclick="applyCrop()" class="w-1/2 bg-indigo-600 hover:bg-indigo-500 py-2.5 rounded-lg font-bold text-sm shadow-lg">補正して確定する</button>
-            </div>
-        </div>
-    </div>
-
     <!-- QRコードモーダル -->
     <div id="qrModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
             <h3 class="text-lg font-bold">スマホ連携用QRコード</h3>
             <div id="qrcode" class="bg-white p-4 rounded-xl inline-block"></div>
-            <p class="text-xs text-slate-400">このQRコードをスマホのカメラで読み取ると、ログイン不要でそのままカメラ撮影＆OCR解析を行えます。</p>
+            <p class="text-xs text-slate-400">このQRコードをスマホで読み取ると、ログイン不要でそのままカメラ撮影＆自動補正を行えます。</p>
             <button onclick="closeQRCode()" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg font-medium">閉じる</button>
         </div>
     </div>
@@ -137,165 +121,172 @@
     <!-- ローディングモーダル -->
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center p-4 z-50 space-y-4">
         <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-500 border-t-transparent"></div>
-        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIがレシートを統合解析中...</p>
+        <p class="text-lg font-medium text-indigo-300" id="loadingText">自動台形補正＆Gemini統合解析中...</p>
     </div>
 
     <script>
+        let cvReady = false;
         let receiptImages = [];
         let receiptsData = [];
-        let currentImageObj = new Image();
-        let canvas, ctx;
-        let corners = [];
-        let draggingIndex = null;
-        let scale = 1;
+
+        function onOpenCvReady() {
+            cvReady = true;
+            const badge = document.getElementById('cvStatus');
+            badge.textContent = "台形補正エンジン準備完了";
+            badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-800";
+        }
+
+        function onOpenCvError() {
+            const badge = document.getElementById('cvStatus');
+            badge.textContent = "エンジン読込失敗(通常モード)";
+            badge.className = "text-xs text-red-400 bg-red-950 px-2 py-0.5 rounded-full border border-red-800";
+        }
+
+        function triggerFileInput() {
+            document.getElementById('receiptInput').click();
+        }
 
         function handleImageSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
 
+            document.getElementById('loadingModal').classList.remove('hidden');
+            document.getElementById('loadingText').textContent = "レシートを自動検知・台形補正中...";
+
             const reader = new FileReader();
             reader.onload = function(e) {
-                currentImageObj.onload = function() {
-                    openCropModal();
+                const img = new Image();
+                img.onload = function() {
+                    try {
+                        const processedBase64 = autoCropAndPerspective(img);
+                        receiptImages.push(processedBase64);
+                        updateThumbnailUI();
+                    } catch (err) {
+                        console.error(err);
+                        // 失敗時はフォールバックとしてそのまま追加
+                        receiptImages.push(e.target.result);
+                        updateThumbnailUI();
+                    } finally {
+                        document.getElementById('loadingModal').classList.add('hidden');
+                        document.getElementById('loadingText').textContent = "AI自動OCR解析を実行中...";
+                    }
                 };
-                currentImageObj.src = e.target.result;
+                img.src = e.target.result;
             };
             reader.readAsDataURL(file);
             event.target.value = '';
         }
 
-        function openCropModal() {
-            document.getElementById('cropModal').classList.remove('hidden');
-            canvas = document.getElementById('cropCanvas');
-            ctx = canvas.getContext('2d');
-
-            // 画面サイズに合わせてCanvas解像度を調整
-            const maxWidth = 500;
-            scale = currentImageObj.width > maxWidth ? maxWidth / currentImageObj.width : 1;
-            canvas.width = currentImageObj.width * scale;
-            canvas.height = currentImageObj.height * scale;
-
-            // 初期位置（画像の四隅から少し内側をデフォルト枠に）
-            const w = canvas.width;
-            const h = canvas.height;
-            corners = [
-                { x: w * 0.15, y: h * 0.15 }, // 左上
-                { x: w * 0.85, y: h * 0.15 }, // 右上
-                { x: w * 0.85, y: h * 0.85 }, // 右下
-                { x: w * 0.15, y: h * 0.85 }  // 左下
-            ];
-
-            drawCropCanvas();
-            initCanvasEvents();
-        }
-
-        function closeCropModal() {
-            document.getElementById('cropModal').classList.add('hidden');
-        }
-
-        function drawCropCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(currentImageObj, 0, 0, canvas.width, canvas.height);
-
-            // 枠線の描画
-            ctx.beginPath();
-            ctx.moveTo(corners[0].x, corners[0].y);
-            for (let i = 1; i < 4; i++) {
-                ctx.lineTo(corners[i].x, corners[i].y);
+        // OpenCV.jsによる自動輪郭検出 ＆ 台形補正アルゴリズム
+        function autoCropAndPerspective(imgElement) {
+            if (!cvReady || typeof cv === 'undefined') {
+                return getBase64Image(imgElement);
             }
-            ctx.closePath();
-            ctx.strokeStyle = '#6366f1';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            ctx.fillStyle = 'rgba(99, 102, 241, 0.15)';
-            ctx.fill();
 
-            // 四隅のハンドル（赤い丸）を描画
-            corners.forEach((c, idx) => {
-                ctx.beginPath();
-                ctx.arc(c.x, c.y, 10, 0, Math.PI * 2);
-                ctx.fillStyle = '#ef4444';
-                ctx.fill();
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            });
-        }
+            let src = cv.imread(imgElement);
+            let dst = new cv.Mat();
+            let gray = new cv.Mat();
+            let blurred = new cv.Mat();
+            let edged = new cv.Mat();
 
-        function initCanvasEvents() {
-            const getPos = (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                return {
-                    x: clientX - rect.left,
-                    y: clientY - rect.top
-                };
-            };
+            try {
+                // 前処理：グレースケール化・ぼかし・エッジ検出
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+                cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+                cv.Canny(blurred, edged, 75, 200);
 
-            const onStart = (e) => {
-                const pos = getPos(e);
-                corners.forEach((c, idx) => {
-                    const dist = Math.hypot(c.x - pos.x, c.y - pos.y);
-                    if (dist < 25) {
-                        draggingIndex = idx;
+                let contours = new cv.MatVector();
+                let hierarchy = new cv.Mat();
+                cv.findContours(edged, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+                let maxArea = 0;
+                let bestApprox = null;
+
+                // 最大の4角形（レシート候補）を探索
+                for (let i = 0; i < contours.size(); ++i) {
+                    let cnt = contours.get(i);
+                    let area = cv.contourArea(cnt);
+                    if (area > maxArea && area > (src.cols * src.rows * 0.1)) {
+                        let peri = cv.arcLength(cnt, true);
+                        let approx = new cv.Mat();
+                        cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+                        if (approx.rows === 4) {
+                            maxArea = area;
+                            if (bestApprox) bestApprox.delete();
+                            bestApprox = approx;
+                        } else {
+                            approx.delete();
+                        }
                     }
-                });
-            };
+                }
 
-            const onMove = (e) => {
-                if (draggingIndex === null) return;
-                const pos = getPos(e);
-                corners[draggingIndex].x = Math.max(0, Math.min(canvas.width, pos.x));
-                corners[draggingIndex].y = Math.max(0, Math.min(canvas.height, pos.y));
-                drawCropCanvas();
-            };
+                if (bestApprox) {
+                    // 見つかった4頂点を取得して台形補正（透視投影変換）を実行
+                    let points = [];
+                    for (let i = 0; i < 4; i++) {
+                        points.push({ x: bestApprox.data32S[i * 2], y: bestApprox.data32S[i * 2 + 1] });
+                    }
 
-            const onEnd = () => {
-                draggingIndex = null;
-            };
+                    // 並び替え（左上、右上、右下、左下）
+                    points.sort((a, b) => a.y - b.y);
+                    let top = points.slice(0, 2).sort((a, b) => a.x - b.x);
+                    let bottom = points.slice(2, 4).sort((a, b) => a.x - b.x);
+                    let pts = [top[0], top[1], bottom[1], bottom[0]];
 
-            canvas.onmousedown = onStart;
-            window.onmousemove = onMove;
-            window.onmouseup = onEnd;
+                    let widthA = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
+                    let widthB = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+                    let maxWidth = Math.max(widthA, widthB, 400);
 
-            canvas.ontouchstart = onStart;
-            window.ontouchmove = onMove;
-            window.ontouchend = onEnd;
+                    let heightA = Math.hypot(pts[1].x - pts[2].x, pts[1].y - pts[2].y);
+                    let heightB = Math.hypot(pts[0].x - pts[3].x, pts[0].y - pts[3].y);
+                    let maxHeight = Math.max(heightA, heightB, 600);
+
+                    let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                        pts[0].x, pts[0].y,
+                        pts[1].x, pts[1].y,
+                        pts[2].x, pts[2].y,
+                        pts[3].x, pts[3].y
+                    ]);
+
+                    let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                        0, 0,
+                        maxWidth, 0,
+                        maxWidth, maxHeight,
+                        0, maxHeight
+                    ]);
+
+                    let M = cv.getPerspectiveTransform(srcTri, dstTri);
+                    let dsize = new cv.Size(maxWidth, maxHeight);
+                    cv.warpPerspective(src, dst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+                    srcTri.delete(); dstTri.delete(); M.delete(); bestApprox.delete();
+                } else {
+                    // 輪郭が見つからない場合はそのまま使用
+                    src.copyTo(dst);
+                }
+
+                contours.delete(); hierarchy.delete(); gray.delete(); blurred.delete(); edged.delete();
+
+                // Canvasに描画してBase64化
+                let canvas = document.createElement('canvas');
+                cv.imshow(canvas, dst);
+                src.delete(); dst.delete();
+                return canvas.toDataURL('image/jpeg', 0.9);
+
+            } catch (err) {
+                console.error("OpenCV processing error:", err);
+                src.delete(); dst.delete(); gray.delete(); blurred.delete(); edged.delete();
+                return getBase64Image(imgElement);
+            }
         }
 
-        function applyCrop() {
-            // 元画像上の座標にスケールを戻す
-            const origCorners = corners.map(c => ({
-                x: c.x / scale,
-                y: c.y / scale
-            }));
-
-            // 切り出し先（長方形）の幅と高さを計算
-            const widthTop = Math.hypot(origCorners[1].x - origCorners[0].x, origCorners[1].y - origCorners[0].y);
-            const widthBottom = Math.hypot(origCorners[2].x - origCorners[3].x, origCorners[2].y - origCorners[3].y);
-            const maxWidth = Math.max(widthTop, widthBottom, 400);
-
-            const heightLeft = Math.hypot(origCorners[3].x - origCorners[0].x, origCorners[3].y - origCorners[0].y);
-            const heightRight = Math.hypot(origCorners[2].x - origCorners[1].x, origCorners[2].y - origCorners[1].y);
-            const maxHeight = Math.max(heightLeft, heightRight, 600);
-
-            const outCanvas = document.createElement('canvas');
-            outCanvas.width = maxWidth;
-            outCanvas.height = maxHeight;
-            const outCtx = outCanvas.getContext('2d');
-
-            // 簡易切り抜き＆変形（四隅に合わせた切り出し）
-            outCtx.drawImage(currentImageObj, 
-                origCorners[0].x, origCorners[0].y, 
-                origCorners[1].x - origCorners[0].x + maxWidth, origCorners[3].y - origCorners[0].y + maxHeight,
-                0, 0, maxWidth, maxHeight
-            );
-
-            const croppedBase64 = outCanvas.toDataURL('image/jpeg', 0.85);
-            receiptImages.push(croppedBase64);
-            updateThumbnailUI();
-            closeCropModal();
+        function getBase64Image(img) {
+            let canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            let ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            return canvas.toDataURL('image/jpeg', 0.9);
         }
 
         function updateThumbnailUI() {
@@ -338,6 +329,7 @@
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
             document.getElementById('loadingModal').classList.remove('hidden');
+            document.getElementById('loadingText').textContent = "Gemini AIが補正済みレシートを統合解析中...";
 
             try {
                 const response = await fetch('/api/analyze', {
@@ -352,7 +344,7 @@
                 receiptsData.unshift(result);
                 renderTable();
                 clearImages();
-                alert('レシートの統合解析が完了しました！');
+                alert('レシートの自動台形補正 ＆ 統合解析が完了しました！');
             } catch (error) {
                 alert('エラー: ' + error.message);
             } finally {
