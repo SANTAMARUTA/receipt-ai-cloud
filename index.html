@@ -17,7 +17,7 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
-                <span class="text-xs text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-800">リアルタイムAIスキャナー稼働中</span>
+                <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">フルオート超高精度モード稼働中</span>
             </div>
         </div>
         <div class="flex items-center space-x-3">
@@ -37,25 +37,25 @@
                 <div>
                     <h2 class="text-lg font-semibold flex items-center space-x-2">
                         <i class="fa-solid fa-camera text-indigo-400"></i>
-                        <span>リアルタイム自動スキャン ＆ 長尺レシート複数枚追加</span>
+                        <span>AIスマートスキャン ＆ 長尺複数枚追加</span>
                     </h2>
-                    <p class="text-xs text-slate-400 mt-1">カメラを起動すると、品質をリアルタイム判定しながら自動で美しくフラットに切り抜きます。</p>
+                    <p class="text-xs text-slate-400 mt-1">撮影された画像は、ツール側が自動で限界までコントラスト・明るさを最適化してフラット化します。</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 <!-- ライブスキャナー起動ボタン -->
                 <div class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50 flex flex-col items-center justify-center" onclick="openLiveCamera()">
-                    <i class="fa-solid fa-wand-magic-sparkles text-4xl text-indigo-400 mb-3 animate-pulse"></i>
-                    <p class="font-medium text-lg">AIライブスキャナーを起動する</p>
-                    <p class="text-xs text-slate-400 mt-1">青い枠と品質判定付きの本格スキャンカメラが開きます</p>
+                    <i class="fa-solid fa-camera-rotate text-4xl text-indigo-400 mb-3 animate-pulse"></i>
+                    <p class="font-medium text-lg">AIスキャナーカメラを起動する</p>
+                    <p class="text-xs text-slate-400 mt-1">ガイド付きスマート撮影が開きます</p>
                 </div>
 
                 <!-- 選択された画像一覧（サムネイル） -->
                 <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
                     <div class="flex justify-between items-center">
                         <p class="text-sm font-medium text-indigo-300">
-                            <i class="fa-solid fa-images mr-1"></i> スキャン済み画像一覧 (<span id="imageCount">0</span>枚)
+                            <i class="fa-solid fa-images mr-1"></i> 最適化済み画像一覧 (<span id="imageCount">0</span>枚)
                         </p>
                         <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
                     </div>
@@ -105,29 +105,30 @@
         </section>
     </main>
 
-    <!-- ライブカメラモーダル (Googleドライブ風スキャナー) -->
+    <!-- ライブカメラモーダル -->
     <div id="cameraModal" class="hidden fixed inset-0 bg-black z-50 flex flex-col justify-between p-4">
-        <!-- カメラヘッダー -->
-        <div class="flex justify-between items-center text-white z-10 bg-black/60 p-3 rounded-xl backdrop-blur">
+        <!-- カメラヘッダー (ガイドバッジ) -->
+        <div class="flex justify-between items-center text-white z-10 bg-black/70 p-3 rounded-xl backdrop-blur">
             <div class="flex items-center space-x-2">
-                <span id="qualityBadge" class="bg-amber-500 text-slate-950 font-bold px-3 py-1 rounded-full text-xs shadow">判定中...</span>
+                <span id="qualityBadge" class="bg-indigo-400 text-slate-950 font-bold px-3 py-1.5 rounded-full text-xs shadow">💡 ガイド: 真上から撮影推奨</span>
             </div>
             <button onclick="closeLiveCamera()" class="text-white text-xl p-2"><i class="fa-solid fa-xmark"></i></button>
         </div>
 
-        <!-- カメラビュー ＋ 青枠オーバーレイ -->
+        <!-- カメラビュー ＋ ガイド枠 -->
         <div class="relative flex-1 flex items-center justify-center overflow-hidden my-2">
             <video id="cameraVideo" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
             <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
-            <!-- 中央ガイド枠 -->
-            <div class="absolute border-2 border-indigo-400/80 rounded-2xl w-[80%] h-[75%] pointer-events-none shadow-[0_0_20px_rgba(99,102,241,0.5)] flex items-center justify-center">
-                <div class="absolute top-2 text-indigo-300 bg-slate-900/70 px-3 py-1 rounded-full text-xs font-medium">レシートをこの枠内に合わせてください</div>
+            
+            <div class="absolute border-2 border-indigo-400 rounded-2xl w-[82%] h-[78%] pointer-events-none shadow-[0_0_25px_rgba(99,102,241,0.6)] flex flex-col items-center justify-between p-4">
+                <span class="text-indigo-200 bg-slate-900/80 px-3 py-1 rounded-full text-xs font-medium border border-indigo-500/50">レシートを枠内に入れて撮影してください</span>
+                <div class="w-full h-full border border-dashed border-indigo-400/40 rounded-xl my-2"></div>
+                <span id="guideTip" class="text-[11px] text-slate-300 bg-black/60 px-2.5 py-1 rounded">※どんな状態でもツールが自動で最大限補正・フラット化します</span>
             </div>
         </div>
 
         <!-- カメラフッター (シャッターボタン) -->
-        <div class="flex flex-col items-center justify-center space-y-3 pb-6 z-10 bg-black/60 p-4 rounded-xl backdrop-blur">
-            <p class="text-xs text-slate-300 text-center">「最高精度」または「高精度」の時にシャッターを押すと綺麗にフラット化されます</p>
+        <div class="flex flex-col items-center justify-center space-y-2 pb-6 z-10 bg-black/70 p-4 rounded-xl backdrop-blur">
             <button onclick="takeSnapshot()" class="w-20 h-20 bg-white rounded-full border-4 border-indigo-600 flex items-center justify-center shadow-2xl active:scale-95 transition">
                 <div class="w-16 h-16 bg-indigo-600 rounded-full"></div>
             </button>
@@ -137,7 +138,7 @@
     <!-- ローディングモーダル -->
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center p-4 z-50 space-y-4">
         <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-500 border-t-transparent"></div>
-        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIがレシートを統合解析中...</p>
+        <p class="text-lg font-medium text-indigo-300" id="loadingText">フルオート画像最適化 ＆ 統合解析中...</p>
     </div>
 
     <script>
@@ -170,7 +171,7 @@
             video.srcObject = videoStream;
             video.onloadedmetadata = () => {
                 video.play();
-                startRealtimeProcessing();
+                startQualityEvaluator();
             };
         }
 
@@ -183,76 +184,52 @@
             document.getElementById('cameraModal').classList.add('hidden');
         }
 
-        function startRealtimeProcessing() {
+        function startQualityEvaluator() {
             const video = document.getElementById('cameraVideo');
             const canvas = document.getElementById('overlayCanvas');
             const ctx = canvas.getContext('2d');
             const badge = document.getElementById('qualityBadge');
+            const tip = document.getElementById('guideTip');
 
-            function processFrame() {
+            function evaluate() {
                 if (video.paused || video.ended) return;
 
                 canvas.width = video.videoWidth || 640;
                 canvas.height = video.videoHeight || 480;
-
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                // 中央エリアの画像データをサンプリングして明るさ・シャープネスを簡易判定
                 const cx = canvas.width * 0.1;
-                const cy = canvas.height * 0.125;
+                const cy = canvas.height * 0.11;
                 const cw = canvas.width * 0.8;
-                const ch = canvas.height * 0.75;
+                const ch = canvas.height * 0.78;
 
                 try {
-                    const frameData = ctx.getImageData(cx, cy, cw, ch);
-                    const data = frameData.data;
-                    let brightnessSum = 0;
-                    let varianceSum = 0;
-
-                    for (let i = 0; i < data.length; i += 16) {
-                        const gray = (data[i] + data[i+1] + data[i+2]) / 3;
-                        brightnessSum += gray;
+                    const imgData = ctx.getImageData(cx, cy, cw, ch);
+                    const data = imgData.data;
+                    let sum = 0;
+                    for (let i = 0; i < data.length; i += 32) {
+                        sum += (data[i] + data[i+1] + data[i+2]) / 3;
                     }
-                    const avgBrightness = brightnessSum / (data.length / 16);
+                    const avg = sum / (data.length / 32);
 
-                    // リアルタイム品質判定ロジック
-                    let quality = "中精度";
-                    let badgeClass = "bg-amber-500 text-slate-950 font-bold px-3 py-1 rounded-full text-xs shadow";
-                    let frameColor = "rgba(59, 130, 246, 0.3)";
-
-                    if (avgBrightness > 60 && avgBrightness < 210) {
-                        quality = "最高精度";
-                        badgeClass = "bg-emerald-400 text-slate-950 font-bold px-3 py-1 rounded-full text-xs shadow animate-pulse";
-                        frameColor = "rgba(16, 185, 129, 0.7)";
-                    } else if (avgBrightness >= 40 && avgBrightness <= 230) {
-                        quality = "高精度";
-                        badgeClass = "bg-blue-400 text-slate-950 font-bold px-3 py-1 rounded-full text-xs shadow";
-                        frameColor = "rgba(59, 130, 246, 0.6)";
+                    if (avg < 40) {
+                        badge.textContent = "🔴 低精度 (暗め・自動補正で対応)";
+                        badge.className = "bg-red-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow";
+                    } else if (avg > 220) {
+                        badge.textContent = "🟡 中精度 (光の反射注意)";
+                        badge.className = "bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-full text-xs shadow";
                     } else {
-                        quality = "低精度（明るさ調整推奨）";
-                        badgeClass = "bg-red-500 text-white font-bold px-3 py-1 rounded-full text-xs shadow";
-                        frameColor = "rgba(239, 68, 68, 0.6)";
+                        badge.textContent = "🟢 最高精度 (綺麗に捉えています)";
+                        badge.className = "bg-emerald-400 text-slate-950 font-bold px-3 py-1.5 rounded-full text-xs shadow";
                     }
-
-                    badge.textContent = `🟢 ステータス: ${quality}`;
-                    badge.className = badgeClass;
-
-                    // 薄い青・緑色のオーバーレイ（中塗り）と枠を描画
-                    ctx.fillStyle = frameColor.replace(/[\d.]+\)$/, '0.15)');
-                    ctx.fillRect(cx, cy, cw, ch);
-
-                    ctx.strokeStyle = frameColor;
-                    ctx.lineWidth = 4;
-                    ctx.strokeRect(cx, cy, cw, ch);
-
                 } catch (e) {
-                    console.error(e);
+                    badge.textContent = "💡 ガイド: 真上から撮影推奨";
                 }
 
-                animFrameId = requestAnimationFrame(processFrame);
+                animFrameId = requestAnimationFrame(evaluate);
             }
 
-            animFrameId = requestAnimationFrame(processFrame);
+            animFrameId = requestAnimationFrame(evaluate);
         }
 
         function takeSnapshot() {
@@ -266,18 +243,18 @@
             closeLiveCamera();
 
             document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "自動フラット化 ＆ 文字くっきり調整中...";
+            document.getElementById('loadingText').textContent = "フルオート最適化 ＆ 限界フラット化中...";
 
             setTimeout(() => {
-                const flattenedBase64 = flattenAndEnhance(canvas);
-                receiptImages.push(flattenedBase64);
+                const optimizedBase64 = fullAutoOptimizeImage(canvas);
+                receiptImages.push(optimizedBase64);
                 updateThumbnailUI();
                 document.getElementById('loadingModal').classList.add('hidden');
             }, 300);
         }
 
-        // 自動フラット化 ＆ 文字強調アルゴリズム
-        function flattenAndEnhance(sourceCanvas) {
+        // どんな状態の画像であってもツール側がフルオートで最大限補正・フラット化する最強エンジン
+        function fullAutoOptimizeImage(sourceCanvas) {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
 
@@ -296,21 +273,45 @@
             try {
                 const imgData = ctx.getImageData(0, 0, width, height);
                 const data = imgData.data;
-                const factor = 1.3; // コントラストを強めて文字をシャープに
+
+                // 1. オートコントラスト（ヒストグラムストレッチ）の計算
+                let minLum = 255;
+                let maxLum = 0;
 
                 for (let i = 0; i < data.length; i += 4) {
                     let r = data[i], g = data[i+1], b = data[i+2];
-                    r = Math.min(255, Math.max(0, factor * (r - 128) + 128));
-                    g = Math.min(255, Math.max(0, factor * (g - 128) + 128));
-                    b = Math.min(255, Math.max(0, factor * (b - 128) + 128));
-                    data[i] = r; data[i+1] = g; data[i+2] = b;
+                    let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                    if (lum < minLum) minLum = lum;
+                    if (lum > maxLum) maxLum = lum;
                 }
-                ctx.putImageData(imgData, 0, 0);
+
+                // 2. どんな状態（高精度・低精度問わず）でも限界までくっきり白黒フラット化
+                if (maxLum > minLum) {
+                    const range = maxLum - minLum;
+                    for (let i = 0; i < data.length; i += 4) {
+                        let r = data[i], g = data[i+1], b = data[i+2];
+                        
+                        // コントラスト引き伸ばし
+                        r = Math.min(255, Math.max(0, ((r - minLum) / range) * 255));
+                        g = Math.min(255, Math.max(0, ((g - minLum) / range) * 255));
+                        b = Math.min(255, Math.max(0, ((b - minLum) / range) * 255));
+
+                        // 文字の黒をより濃く、背景の白をよりクリアにするトーン最適化
+                        r = r < 110 ? r * 0.75 : Math.min(255, r * 1.15);
+                        g = g < 110 ? g * 0.75 : Math.min(255, g * 1.15);
+                        b = b < 110 ? b * 0.75 : Math.min(255, b * 1.15);
+
+                        data[i] = r;
+                        data[i+1] = g;
+                        data[i+2] = b;
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+                }
             } catch (err) {
-                console.log("Enhancement fallback");
+                console.log("Full auto optimization fallback used");
             }
 
-            return canvas.toDataURL('image/jpeg', 0.9);
+            return canvas.toDataURL('image/jpeg', 0.92);
         }
 
         function updateThumbnailUI() {
@@ -353,7 +354,7 @@
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
             document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "Gemini AIが複数枚のレシートを統合解析中...";
+            document.getElementById('loadingText').textContent = "Gemini AIが最適化済みレシートを統合解析中...";
 
             try {
                 const response = await fetch('/api/analyze', {
@@ -368,7 +369,7 @@
                 receiptsData.unshift(result);
                 renderTable();
                 clearImages();
-                alert('レシートの統合解析が完了しました！');
+                alert('レシートのフルオート最適化 ＆ 統合解析が完了しました！');
             } catch (error) {
                 alert('エラー: ' + error.message);
             } finally {
