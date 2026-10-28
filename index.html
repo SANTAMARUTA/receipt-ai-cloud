@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
     <!-- ヘッダー -->
@@ -18,7 +17,7 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
-                <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">マスター専用・セキュア版</span>
+                <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">マスター専用・長尺分割対応版</span>
             </div>
         </div>
         <div class="flex items-center space-x-3">
@@ -32,31 +31,41 @@
     </header>
 
     <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
-        <!-- レシート撮影・アップロード・台形補正セクション -->
-        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-semibold flex items-center space-x-2">
-                    <i class="fa-solid fa-camera text-indigo-400"></i>
-                    <span>レシート撮影・アップロード（台形補正対応）</span>
-                </h2>
-                <span class="text-xs text-slate-400">サーバー側で安全にAI解析します</span>
+        <!-- レシート撮影・追加セクション -->
+        <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold flex items-center space-x-2">
+                        <i class="fa-solid fa-camera text-indigo-400"></i>
+                        <span>レシート撮影・複数枚の追加（長尺対応）</span>
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-1">長いレシートは分割して何枚でも撮影・追加できます。AIが自動で1つにまとめて解析します。</p>
+                </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                <!-- 撮影・追加ボタン -->
                 <div class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50" onclick="document.getElementById('receiptInput').click()">
                     <i class="fa-solid fa-cloud-arrow-up text-4xl text-indigo-400 mb-3"></i>
-                    <p class="font-medium">スマホカメラで撮影 / 画像を選択</p>
-                    <p class="text-xs text-slate-400 mt-1">JPEG, PNG対応（自動で台形補正・切り抜きを行います）</p>
+                    <p class="font-medium">スマホカメラで撮影 / 画像を追加</p>
+                    <p class="text-xs text-slate-400 mt-1">何度でも追加して複数枚を同時に解析できます</p>
                     <input type="file" id="receiptInput" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelect(event)">
                 </div>
 
-                <!-- プレビュー & 補正エリア -->
-                <div id="cropArea" class="hidden bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
-                    <p class="text-sm font-medium text-indigo-300"><i class="fa-solid fa-crop mr-1"></i> 撮影画像の確認・解析</p>
-                    <div class="relative max-h-60 overflow-hidden rounded-lg flex justify-center bg-black/40">
-                        <img id="previewImage" class="max-h-56 object-contain" alt="プレビュー">
+                <!-- 選択された画像一覧（サムネイル） -->
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
+                    <div class="flex justify-between items-center">
+                        <p class="text-sm font-medium text-indigo-300">
+                            <i class="fa-solid fa-images mr-1"></i> 撮影済み画像一覧 (<span id="imageCount">0</span>枚)
+                        </p>
+                        <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
                     </div>
-                    <button onclick="analyzeReceipt()" id="analyzeBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2">
+
+                    <div id="thumbnailContainer" class="grid grid-cols-3 gap-3 max-h-48 overflow-y-auto p-1 bg-black/30 rounded-lg min-h-[100px] items-center justify-center">
+                        <p class="col-span-3 text-center text-xs text-slate-500 py-6">まだ画像が追加されていません</p>
+                    </div>
+
+                    <button onclick="analyzeReceipts()" id="analyzeBtn" disabled class="w-full bg-slate-700 text-slate-400 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed">
                         <i class="fa-solid fa-wand-magic-sparkles"></i><span>AI自動OCR解析を実行する</span>
                     </button>
                 </div>
@@ -89,7 +98,7 @@
                     </thead>
                     <tbody id="receiptTableBody" class="divide-y divide-slate-700">
                         <tr>
-                            <td colspan="6" class="p-8 text-center text-slate-500">まだレシートが読み込まれていません。「スマホカメラで撮影」からお試しください。</td>
+                            <td colspan="6" class="p-8 text-center text-slate-500">まだレシートが読み込まれていません。</td>
                         </tr>
                     </tbody>
                 </table>
@@ -110,34 +119,75 @@
     <!-- ローディングモーダル -->
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center p-4 z-50 space-y-4">
         <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-500 border-t-transparent"></div>
-        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIがレシートを解析中...</p>
+        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIが複数枚のレシートを統合解析中...</p>
     </div>
 
     <script>
-        let currentBase64Image = null;
+        let receiptImages = [];
         let receiptsData = [];
 
         function handleImageSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                currentBase64Image = e.target.result;
-                document.getElementById('previewImage').src = currentBase64Image;
-                document.getElementById('cropArea').classList.remove('hidden');
-            };
-            reader.readAsDataURL(file);
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    receiptImages.push(e.target.result);
+                    updateThumbnailUI();
+                };
+                reader.readAsDataURL(file);
+            });
+            // 同じファイルを連続で選択できるようにリセット
+            event.target.value = '';
         }
 
-        async function analyzeReceipt() {
-            if (!currentBase64Image) return;
+        function updateThumbnailUI() {
+            const container = document.getElementById('thumbnailContainer');
+            const countSpan = document.getElementById('imageCount');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+
+            countSpan.textContent = receiptImages.length;
+
+            if (receiptImages.length === 0) {
+                container.innerHTML = `<p class="col-span-3 text-center text-xs text-slate-500 py-6">まだ画像が追加されていません</p>`;
+                analyzeBtn.disabled = true;
+                analyzeBtn.className = "w-full bg-slate-700 text-slate-400 py-2.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed";
+                return;
+            }
+
+            container.innerHTML = receiptImages.map((img, index) => `
+                <div class="relative group bg-black rounded-lg overflow-hiden border border-slate-700 aspect-square flex items-center justify-center">
+                    <img src="${img}" class="h-full w-full object-contain">
+                    <button onclick="removeImage(${index})" class="absolute top-1 right-1 bg-red-600/80 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            `).join('');
+
+            analyzeBtn.disabled = false;
+            analyzeBtn.className = "w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer";
+        }
+
+        function removeImage(index) {
+            receiptImages.splice(index, 1);
+            updateThumbnailUI();
+        }
+
+        function clearImages() {
+            receiptImages = [];
+            updateThumbnailUI();
+        }
+
+        async function analyzeReceipts() {
+            if (receiptImages.length === 0) return;
             document.getElementById('loadingModal').classList.remove('hidden');
 
             try {
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: currentBase64Image })
+                    body: JSON.stringify({ images: receiptImages })
                 });
 
                 const result = await response.json();
@@ -145,8 +195,8 @@
 
                 receiptsData.unshift(result);
                 renderTable();
-                document.getElementById('cropArea').classList.add('hidden');
-                alert('レシートの解析が完了しました！');
+                clearImages();
+                alert('レシートの統合解析が完了しました！');
             } catch (error) {
                 alert('エラー: ' + error.message);
             } finally {

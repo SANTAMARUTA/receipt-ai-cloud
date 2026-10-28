@@ -9,30 +9,45 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { image } = req.body;
-        if (!image) {
+        const { images, image } = req.body;
+        
+        // 単一画像と複数画像（配列）の両方に対応
+        let imageList = [];
+        if (images && Array.isArray(images)) {
+            imageList = images;
+        } else if (image) {
+            imageList = [image];
+        }
+
+        if (imageList.length === 0) {
             return res.status(400).json({ error: '画像データがありません。' });
         }
 
-        // Base64データからMIMEタイプとデータを抽出
-        const matches = image.match(/^data:(image\/[a-zA-Z+-]+);base64,(.+)$/);
-        if (!matches) {
-            return res.status(400).json({ error: '無効な画像データ形式です。' });
-        }
-        const mimeType = matches[1];
-        const base64Data = matches[2];
+        // Gemini APIに渡すpartsを作成
+        const parts = [
+            { 
+                text: "これらは1枚の長いレシートを分割して撮影した画像、または複数のレシート画像です。これら全体を統合して1つの取引として扱い、以下のJSON形式のみ（余計な文字やマークダウン不要）でデータを抽出してください：{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 合計金額の数値, \"tax\": 消費税額の数値(不明なら0), \"category\": \"勘定科目(消耗品費、旅費交通費、接待交際費、会議費などから適切に選択)\"}" 
+            }
+        ];
 
-        // Gemini API (gemini-2.5-flash) を直接呼出し
+        for (const imgBase64 of imageList) {
+            const matches = imgBase64.match(/^data:(image\/[a-zA-Z+-]+);base64,(.+)$/);
+            if (matches) {
+                parts.push({
+                    inline_data: {
+                        mime_type: matches[1],
+                        data: matches[2]
+                    }
+                });
+            }
+        }
+
+        // Gemini API (gemini-2.5-flash) を呼び出し
         const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{
-                    parts: [
-                        { text: "このレシート画像を解析し、以下のJSON形式のみ（余計な文字やマークダウン不要）でデータを抽出してください：{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 合計金額の数値, \"tax\": 消費税額の数値(不明なら0), \"category\": \"勘定科目(消耗品費、旅費交通費、接待交際費、会議費などから適切に選択)\"}" },
-                        { inline_data: { mime_type: mimeType, data: base64Data } }
-                    ]
-                }]
+                contents: [{ parts: parts }]
             })
         });
 
@@ -46,7 +61,6 @@ export default async function handler(req, res) {
             throw new Error('AIからの応答を正しく取得できませんでした。');
         }
 
-        // JSON部分をクリーンアップしてパース
         const cleanJsonStr = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
         const parsedData = JSON.parse(cleanJsonStr);
 
