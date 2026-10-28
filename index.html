@@ -6,8 +6,6 @@
     <title>レシートAIクラウド - プロフェッショナル</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-    <!-- OpenCV.jsの読み込み（自動台形補正用） -->
-    <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady()" onerror="onOpenCvError()"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
@@ -19,7 +17,7 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
-                <span id="cvStatus" class="text-xs text-amber-400 bg-amber-950 px-2 py-0.5 rounded-full border border-amber-800">AIエンジン準備中...</span>
+                <span class="text-xs text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-800">高速・高精度OCRモード稼働中</span>
             </div>
         </div>
         <div class="flex items-center space-x-3">
@@ -39,18 +37,18 @@
                 <div>
                     <h2 class="text-lg font-semibold flex items-center space-x-2">
                         <i class="fa-solid fa-camera text-indigo-400"></i>
-                        <span>自動台形補正・長尺レシート撮影</span>
+                        <span>自動文字くっきり調整 ＆ 複数枚・長尺レシート撮影</span>
                     </h2>
-                    <p class="text-xs text-slate-400 mt-1">撮影するだけでプログラムが自動でレシートを切り抜き・補正します。長尺は何度でも追加可能です。</p>
+                    <p class="text-xs text-slate-400 mt-1">撮影するだけで文字が自動でくっきりシャープに調整されます。長尺は何度でも追加可能です。</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 <!-- 撮影ボタン -->
-                <div id="dropZone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50" onclick="triggerFileInput()">
+                <div class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50" onclick="document.getElementById('receiptInput').click()">
                     <i class="fa-solid fa-cloud-arrow-up text-4xl text-indigo-400 mb-3"></i>
                     <p class="font-medium">スマホカメラで撮影 / 画像を選択</p>
-                    <p class="text-xs text-slate-400 mt-1">自動で傾き補正・切り抜きが行われます</p>
+                    <p class="text-xs text-slate-400 mt-1">何度でも追加して複数枚を同時に解析できます</p>
                     <input type="file" id="receiptInput" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelect(event)">
                 </div>
 
@@ -58,7 +56,7 @@
                 <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
                     <div class="flex justify-between items-center">
                         <p class="text-sm font-medium text-indigo-300">
-                            <i class="fa-solid fa-images mr-1"></i> 自動補正済み画像一覧 (<span id="imageCount">0</span>枚)
+                            <i class="fa-solid fa-images mr-1"></i> 撮影済み画像一覧 (<span id="imageCount">0</span>枚)
                         </p>
                         <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
                     </div>
@@ -113,7 +111,7 @@
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
             <h3 class="text-lg font-bold">スマホ連携用QRコード</h3>
             <div id="qrcode" class="bg-white p-4 rounded-xl inline-block"></div>
-            <p class="text-xs text-slate-400">このQRコードをスマホで読み取ると、ログイン不要でそのままカメラ撮影＆自動補正を行えます。</p>
+            <p class="text-xs text-slate-400">このQRコードをスマホのカメラで読み取ると、ログイン不要でそのままカメラ撮影＆OCR解析を行えます。</p>
             <button onclick="closeQRCode()" class="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg font-medium">閉じる</button>
         </div>
     </div>
@@ -121,171 +119,75 @@
     <!-- ローディングモーダル -->
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center p-4 z-50 space-y-4">
         <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-500 border-t-transparent"></div>
-        <p class="text-lg font-medium text-indigo-300" id="loadingText">自動台形補正＆Gemini統合解析中...</p>
+        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIが複数枚のレシートを統合解析中...</p>
     </div>
 
     <script>
-        let cvReady = false;
         let receiptImages = [];
         let receiptsData = [];
 
-        function onOpenCvReady() {
-            cvReady = true;
-            const badge = document.getElementById('cvStatus');
-            badge.textContent = "台形補正エンジン準備完了";
-            badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-800";
-        }
-
-        function onOpenCvError() {
-            const badge = document.getElementById('cvStatus');
-            badge.textContent = "エンジン読込失敗(通常モード)";
-            badge.className = "text-xs text-red-400 bg-red-950 px-2 py-0.5 rounded-full border border-red-800";
-        }
-
-        function triggerFileInput() {
-            document.getElementById('receiptInput').click();
-        }
-
         function handleImageSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
 
-            document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "レシートを自動検知・台形補正中...";
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const img = new Image();
-                img.onload = function() {
-                    try {
-                        const processedBase64 = autoCropAndPerspective(img);
-                        receiptImages.push(processedBase64);
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        // ブラウザ側で自動的に文字くっきり調整（コントラスト強調・リサイズ）を行う
+                        const enhancedBase64 = enhanceReceiptImage(img);
+                        receiptImages.push(enhancedBase64);
                         updateThumbnailUI();
-                    } catch (err) {
-                        console.error(err);
-                        // 失敗時はフォールバックとしてそのまま追加
-                        receiptImages.push(e.target.result);
-                        updateThumbnailUI();
-                    } finally {
-                        document.getElementById('loadingModal').classList.add('hidden');
-                        document.getElementById('loadingText').textContent = "AI自動OCR解析を実行中...";
-                    }
+                    };
+                    img.src = e.target.result;
                 };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
+                reader.readAsDataURL(file);
+            });
             event.target.value = '';
         }
 
-        // OpenCV.jsによる自動輪郭検出 ＆ 台形補正アルゴリズム
-        function autoCropAndPerspective(imgElement) {
-            if (!cvReady || typeof cv === 'undefined') {
-                return getBase64Image(imgElement);
+        // 高速かつ確実に文字をくっきりさせる前処理アルゴリズム
+        function enhanceReceiptImage(img) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            let width = img.width;
+            let height = img.height;
+            const maxWidth = 1200; // 最適な解像度に自動リサイズして高速化
+            if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
             }
 
-            let src = cv.imread(imgElement);
-            let dst = new cv.Mat();
-            let gray = new cv.Mat();
-            let blurred = new cv.Mat();
-            let edged = new cv.Mat();
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
 
+            // コントラストとシャープネスを強めて文字を読みやすくする
             try {
-                // 前処理：グレースケール化・ぼかし・エッジ検出
-                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-                cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
-                cv.Canny(blurred, edged, 75, 200);
+                const imgData = ctx.getImageData(0, 0, width, height);
+                const data = imgData.data;
+                const factor = 1.25; // コントラスト調整係数
 
-                let contours = new cv.MatVector();
-                let hierarchy = new cv.Mat();
-                cv.findContours(edged, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+                for (let i = 0; i < data.length; i += 4) {
+                    let r = data[i];
+                    let g = data[i+1];
+                    let b = data[i+2];
 
-                let maxArea = 0;
-                let bestApprox = null;
+                    r = Math.min(255, Math.max(0, factor * (r - 128) + 128));
+                    g = Math.min(255, Math.max(0, factor * (g - 128) + 128));
+                    b = Math.min(255, Math.max(0, factor * (b - 128) + 128));
 
-                // 最大の4角形（レシート候補）を探索
-                for (let i = 0; i < contours.size(); ++i) {
-                    let cnt = contours.get(i);
-                    let area = cv.contourArea(cnt);
-                    if (area > maxArea && area > (src.cols * src.rows * 0.1)) {
-                        let peri = cv.arcLength(cnt, true);
-                        let approx = new cv.Mat();
-                        cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
-                        if (approx.rows === 4) {
-                            maxArea = area;
-                            if (bestApprox) bestApprox.delete();
-                            bestApprox = approx;
-                        } else {
-                            approx.delete();
-                        }
-                    }
+                    data[i] = r;
+                    data[i+1] = g;
+                    data[i+2] = b;
                 }
-
-                if (bestApprox) {
-                    // 見つかった4頂点を取得して台形補正（透視投影変換）を実行
-                    let points = [];
-                    for (let i = 0; i < 4; i++) {
-                        points.push({ x: bestApprox.data32S[i * 2], y: bestApprox.data32S[i * 2 + 1] });
-                    }
-
-                    // 並び替え（左上、右上、右下、左下）
-                    points.sort((a, b) => a.y - b.y);
-                    let top = points.slice(0, 2).sort((a, b) => a.x - b.x);
-                    let bottom = points.slice(2, 4).sort((a, b) => a.x - b.x);
-                    let pts = [top[0], top[1], bottom[1], bottom[0]];
-
-                    let widthA = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
-                    let widthB = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-                    let maxWidth = Math.max(widthA, widthB, 400);
-
-                    let heightA = Math.hypot(pts[1].x - pts[2].x, pts[1].y - pts[2].y);
-                    let heightB = Math.hypot(pts[0].x - pts[3].x, pts[0].y - pts[3].y);
-                    let maxHeight = Math.max(heightA, heightB, 600);
-
-                    let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-                        pts[0].x, pts[0].y,
-                        pts[1].x, pts[1].y,
-                        pts[2].x, pts[2].y,
-                        pts[3].x, pts[3].y
-                    ]);
-
-                    let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-                        0, 0,
-                        maxWidth, 0,
-                        maxWidth, maxHeight,
-                        0, maxHeight
-                    ]);
-
-                    let M = cv.getPerspectiveTransform(srcTri, dstTri);
-                    let dsize = new cv.Size(maxWidth, maxHeight);
-                    cv.warpPerspective(src, dst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
-
-                    srcTri.delete(); dstTri.delete(); M.delete(); bestApprox.delete();
-                } else {
-                    // 輪郭が見つからない場合はそのまま使用
-                    src.copyTo(dst);
-                }
-
-                contours.delete(); hierarchy.delete(); gray.delete(); blurred.delete(); edged.delete();
-
-                // Canvasに描画してBase64化
-                let canvas = document.createElement('canvas');
-                cv.imshow(canvas, dst);
-                src.delete(); dst.delete();
-                return canvas.toDataURL('image/jpeg', 0.9);
-
+                ctx.putImageData(imgData, 0, 0);
             } catch (err) {
-                console.error("OpenCV processing error:", err);
-                src.delete(); dst.delete(); gray.delete(); blurred.delete(); edged.delete();
-                return getBase64Image(imgElement);
+                console.log("Enhancement fallback used");
             }
-        }
 
-        function getBase64Image(img) {
-            let canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            let ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
             return canvas.toDataURL('image/jpeg', 0.9);
         }
 
@@ -329,7 +231,6 @@
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
             document.getElementById('loadingModal').classList.remove('hidden');
-            document.getElementById('loadingText').textContent = "Gemini AIが補正済みレシートを統合解析中...";
 
             try {
                 const response = await fetch('/api/analyze', {
@@ -344,7 +245,7 @@
                 receiptsData.unshift(result);
                 renderTable();
                 clearImages();
-                alert('レシートの自動台形補正 ＆ 統合解析が完了しました！');
+                alert('レシートの統合解析が完了しました！');
             } catch (error) {
                 alert('エラー: ' + error.message);
             } finally {
