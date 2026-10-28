@@ -11,7 +11,6 @@ export default async function handler(req, res) {
     try {
         const { images, image } = req.body;
         
-        // 単一画像と複数画像（配列）の両方に対応
         let imageList = [];
         if (images && Array.isArray(images)) {
             imageList = images;
@@ -23,7 +22,6 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: '画像データがありません。' });
         }
 
-        // Gemini APIに渡すpartsを作成
         const parts = [
             { 
                 text: "これらは1枚の長いレシートを分割して撮影した画像、または複数のレシート画像です。これら全体を統合して1つの取引として扱い、以下のJSON形式のみ（余計な文字やマークダウン不要）でデータを抽出してください：{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 合計金額の数値, \"tax\": 消費税額の数値(不明なら0), \"category\": \"勘定科目(消耗品費、旅費交通費、接待交際費、会議費などから適切に選択)\"}" 
@@ -42,7 +40,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // Gemini API (gemini-2.5-flash) を呼び出し
         const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

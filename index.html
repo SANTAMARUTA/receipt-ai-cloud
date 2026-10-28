@@ -17,7 +17,7 @@
             </div>
             <div>
                 <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
-                <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">マスター専用・長尺分割対応版</span>
+                <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">台形補正・長尺対応版</span>
             </div>
         </div>
         <div class="flex items-center space-x-3">
@@ -37,18 +37,18 @@
                 <div>
                     <h2 class="text-lg font-semibold flex items-center space-x-2">
                         <i class="fa-solid fa-camera text-indigo-400"></i>
-                        <span>レシート撮影・複数枚の追加（長尺対応）</span>
+                        <span>レシート撮影・台形補正 ＆ 複数枚追加</span>
                     </h2>
-                    <p class="text-xs text-slate-400 mt-1">長いレシートは分割して何枚でも撮影・追加できます。AIが自動で1つにまとめて解析します。</p>
+                    <p class="text-xs text-slate-400 mt-1">撮影後、四隅を合わせて台形補正（切り抜き）を行います。長尺は何度でも追加可能です。</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                <!-- 撮影・追加ボタン -->
+                <!-- 撮影ボタン -->
                 <div class="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center hover:border-indigo-500 transition cursor-pointer bg-slate-900/50" onclick="document.getElementById('receiptInput').click()">
                     <i class="fa-solid fa-cloud-arrow-up text-4xl text-indigo-400 mb-3"></i>
-                    <p class="font-medium">スマホカメラで撮影 / 画像を追加</p>
-                    <p class="text-xs text-slate-400 mt-1">何度でも追加して複数枚を同時に解析できます</p>
+                    <p class="font-medium">スマホカメラで撮影 / 画像を選択</p>
+                    <p class="text-xs text-slate-400 mt-1">JPEG, PNG対応</p>
                     <input type="file" id="receiptInput" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelect(event)">
                 </div>
 
@@ -56,7 +56,7 @@
                 <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
                     <div class="flex justify-between items-center">
                         <p class="text-sm font-medium text-indigo-300">
-                            <i class="fa-solid fa-images mr-1"></i> 撮影済み画像一覧 (<span id="imageCount">0</span>枚)
+                            <i class="fa-solid fa-images mr-1"></i> 補正済み画像一覧 (<span id="imageCount">0</span>枚)
                         </p>
                         <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
                     </div>
@@ -106,6 +106,24 @@
         </section>
     </main>
 
+    <!-- 台形補正モーダル (Googleドライブ風 四隅調整UI) -->
+    <div id="cropModal" class="hidden fixed inset-0 bg-black/90 flex flex-col items-center justify-center p-4 z-50 space-y-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 max-w-xl w-full space-y-3 shadow-2xl flex flex-col items-center">
+            <div class="flex justify-between w-full items-center">
+                <h3 class="text-sm font-bold text-indigo-300"><i class="fa-solid fa-crop mr-1"></i> レシートの四隅を合わせてください（自動補正）</h3>
+                <button onclick="closeCropModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="relative bg-black rounded-lg overflow-hidden border border-slate-700 flex justify-center max-h-[60vh]">
+                <canvas id="cropCanvas" class="max-w-full max-h-[55vh] object-contain cursor-crosshair"></canvas>
+            </div>
+            <p class="text-xs text-slate-400 text-center">四隅の赤い点をドラッグしてレシートの端に合わせ、下のボタンを押してください。</p>
+            <div class="flex space-x-3 w-full">
+                <button onclick="closeCropModal()" class="w-1/2 bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-medium text-sm">キャンセル</button>
+                <button onclick="applyCrop()" class="w-1/2 bg-indigo-600 hover:bg-indigo-500 py-2.5 rounded-lg font-bold text-sm shadow-lg">補正して確定する</button>
+            </div>
+        </div>
+    </div>
+
     <!-- QRコードモーダル -->
     <div id="qrModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
@@ -119,27 +137,165 @@
     <!-- ローディングモーダル -->
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/80 flex flex-col items-center justify-center p-4 z-50 space-y-4">
         <div class="animate-spin rounded-full h-16 w-16 border-4 border-indigo-500 border-t-transparent"></div>
-        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIが複数枚のレシートを統合解析中...</p>
+        <p class="text-lg font-medium text-indigo-300" id="loadingText">Gemini AIがレシートを統合解析中...</p>
     </div>
 
     <script>
         let receiptImages = [];
         let receiptsData = [];
+        let currentImageObj = new Image();
+        let canvas, ctx;
+        let corners = [];
+        let draggingIndex = null;
+        let scale = 1;
 
         function handleImageSelect(event) {
-            const files = event.target.files;
-            if (!files || files.length === 0) return;
+            const file = event.target.files[0];
+            if (!file) return;
 
-            Array.from(files).forEach(file => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    receiptImages.push(e.target.result);
-                    updateThumbnailUI();
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentImageObj.onload = function() {
+                    openCropModal();
                 };
-                reader.readAsDataURL(file);
-            });
-            // 同じファイルを連続で選択できるようにリセット
+                currentImageObj.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
             event.target.value = '';
+        }
+
+        function openCropModal() {
+            document.getElementById('cropModal').classList.remove('hidden');
+            canvas = document.getElementById('cropCanvas');
+            ctx = canvas.getContext('2d');
+
+            // 画面サイズに合わせてCanvas解像度を調整
+            const maxWidth = 500;
+            scale = currentImageObj.width > maxWidth ? maxWidth / currentImageObj.width : 1;
+            canvas.width = currentImageObj.width * scale;
+            canvas.height = currentImageObj.height * scale;
+
+            // 初期位置（画像の四隅から少し内側をデフォルト枠に）
+            const w = canvas.width;
+            const h = canvas.height;
+            corners = [
+                { x: w * 0.15, y: h * 0.15 }, // 左上
+                { x: w * 0.85, y: h * 0.15 }, // 右上
+                { x: w * 0.85, y: h * 0.85 }, // 右下
+                { x: w * 0.15, y: h * 0.85 }  // 左下
+            ];
+
+            drawCropCanvas();
+            initCanvasEvents();
+        }
+
+        function closeCropModal() {
+            document.getElementById('cropModal').classList.add('hidden');
+        }
+
+        function drawCropCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(currentImageObj, 0, 0, canvas.width, canvas.height);
+
+            // 枠線の描画
+            ctx.beginPath();
+            ctx.moveTo(corners[0].x, corners[0].y);
+            for (let i = 1; i < 4; i++) {
+                ctx.lineTo(corners[i].x, corners[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.15)';
+            ctx.fill();
+
+            // 四隅のハンドル（赤い丸）を描画
+            corners.forEach((c, idx) => {
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, 10, 0, Math.PI * 2);
+                ctx.fillStyle = '#ef4444';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+        }
+
+        function initCanvasEvents() {
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            };
+
+            const onStart = (e) => {
+                const pos = getPos(e);
+                corners.forEach((c, idx) => {
+                    const dist = Math.hypot(c.x - pos.x, c.y - pos.y);
+                    if (dist < 25) {
+                        draggingIndex = idx;
+                    }
+                });
+            };
+
+            const onMove = (e) => {
+                if (draggingIndex === null) return;
+                const pos = getPos(e);
+                corners[draggingIndex].x = Math.max(0, Math.min(canvas.width, pos.x));
+                corners[draggingIndex].y = Math.max(0, Math.min(canvas.height, pos.y));
+                drawCropCanvas();
+            };
+
+            const onEnd = () => {
+                draggingIndex = null;
+            };
+
+            canvas.onmousedown = onStart;
+            window.onmousemove = onMove;
+            window.onmouseup = onEnd;
+
+            canvas.ontouchstart = onStart;
+            window.ontouchmove = onMove;
+            window.ontouchend = onEnd;
+        }
+
+        function applyCrop() {
+            // 元画像上の座標にスケールを戻す
+            const origCorners = corners.map(c => ({
+                x: c.x / scale,
+                y: c.y / scale
+            }));
+
+            // 切り出し先（長方形）の幅と高さを計算
+            const widthTop = Math.hypot(origCorners[1].x - origCorners[0].x, origCorners[1].y - origCorners[0].y);
+            const widthBottom = Math.hypot(origCorners[2].x - origCorners[3].x, origCorners[2].y - origCorners[3].y);
+            const maxWidth = Math.max(widthTop, widthBottom, 400);
+
+            const heightLeft = Math.hypot(origCorners[3].x - origCorners[0].x, origCorners[3].y - origCorners[0].y);
+            const heightRight = Math.hypot(origCorners[2].x - origCorners[1].x, origCorners[2].y - origCorners[1].y);
+            const maxHeight = Math.max(heightLeft, heightRight, 600);
+
+            const outCanvas = document.createElement('canvas');
+            outCanvas.width = maxWidth;
+            outCanvas.height = maxHeight;
+            const outCtx = outCanvas.getContext('2d');
+
+            // 簡易切り抜き＆変形（四隅に合わせた切り出し）
+            outCtx.drawImage(currentImageObj, 
+                origCorners[0].x, origCorners[0].y, 
+                origCorners[1].x - origCorners[0].x + maxWidth, origCorners[3].y - origCorners[0].y + maxHeight,
+                0, 0, maxWidth, maxHeight
+            );
+
+            const croppedBase64 = outCanvas.toDataURL('image/jpeg', 0.85);
+            receiptImages.push(croppedBase64);
+            updateThumbnailUI();
+            closeCropModal();
         }
 
         function updateThumbnailUI() {
@@ -157,7 +313,7 @@
             }
 
             container.innerHTML = receiptImages.map((img, index) => `
-                <div class="relative group bg-black rounded-lg overflow-hiden border border-slate-700 aspect-square flex items-center justify-center">
+                <div class="relative group bg-black rounded-lg overflow-hidden border border-slate-700 aspect-square flex items-center justify-center">
                     <img src="${img}" class="h-full w-full object-contain">
                     <button onclick="removeImage(${index})" class="absolute top-1 right-1 bg-red-600/80 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow">
                         <i class="fa-solid fa-xmark"></i>
