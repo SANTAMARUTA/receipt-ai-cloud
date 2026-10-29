@@ -60,7 +60,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (全自動ウェイト制御)</span>
+                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (シャッター完全修復版)</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -83,7 +83,7 @@
                             <i class="fa-solid fa-camera text-indigo-400"></i>
                             <span>レシートを貯めて一括AI解析</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">大量のレシートもサーバーに負荷をかけないよう自動ウェイト＆安全リトライ付きで順次解析されます。</p>
+                        <p class="text-xs text-slate-400 mt-1">撮影したレシートをストックし、一括解析ボタンを押すと進捗バーと一緒に1枚ずつ自動でテーブルへ反映されます。</p>
                     </div>
                     <div class="flex items-center space-x-2 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
                         <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white">
@@ -165,7 +165,7 @@
         </main>
     </div>
 
-    <!-- 📷 カメラモーダル -->
+    <!-- 📷 カメラモーダル (スマホ・PC共通) -->
     <div id="cameraModal" class="hidden fixed inset-0 bg-black z-50 flex flex-col justify-between">
         <div class="flex justify-between items-center text-white z-20 bg-black/80 px-4 py-3 backdrop-blur">
             <div class="flex items-center space-x-2">
@@ -185,7 +185,7 @@
 
         <div class="flex flex-col items-center justify-center space-y-2 py-5 px-4 z-20 bg-black/80 backdrop-blur">
             <p class="text-xs text-slate-300 text-center" id="shutterTip">レシート全体が映るようにカメラを向けてください</p>
-            <button onclick="takeSnapshot()" class="w-20 h-20 bg-white rounded-full border-4 border-blue-500 flex items-center justify-center shadow-2xl active:scale-95 transition">
+            <button onclick="takeSnapshot()" class="w-20 h-20 bg-white rounded-full border-4 border-blue-500 flex items-center justify-center shadow-2xl active:scale-95 transition cursor-pointer">
                 <div class="w-16 h-16 bg-blue-600 rounded-full"></div>
             </button>
         </div>
@@ -287,13 +287,13 @@
             const btnL = document.getElementById('modeBtnLong');
             const tag = document.getElementById('modeStatusTag');
             if (mode === 'normal') {
-                btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
-                btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
-                tag.textContent = "通常モード (1枚ずつ)";
+                if (btnN) btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
+                if (btnL) btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
+                if (tag) tag.textContent = "通常モード (1枚ずつ)";
             } else {
-                btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
-                btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
-                tag.textContent = "長尺レシート結合モード";
+                if (btnN) btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
+                if (btnL) btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
+                if (tag) tag.textContent = "長尺レシート結合モード";
             }
         }
 
@@ -302,11 +302,11 @@
             const lbl = document.getElementById('mobileModeLabel');
             const sub = document.getElementById('mobileModeSubLabel');
             if (captureMode === 'normal') {
-                lbl.textContent = "モード: 1枚ずつ通常撮影";
-                sub.textContent = "撮影された画像はそれぞれ独立した行として処理されます";
+                if (lbl) lbl.textContent = "モード: 1枚ずつ通常撮影";
+                if (sub) sub.textContent = "撮影された画像はそれぞれ独立した行として処理されます";
             } else {
-                lbl.textContent = "モード: 長尺レシート結合";
-                sub.textContent = "複数枚撮るとまとめて1件のデータに統合されます";
+                if (lbl) lbl.textContent = "モード: 長尺レシート結合";
+                if (sub) sub.textContent = "複数枚撮るとまとめて1件のデータに統合されます";
             }
         }
 
@@ -317,9 +317,13 @@
             });
             peer.on('connection', (conn) => {
                 activeConnection = conn;
-                document.getElementById('pcSyncBadge').textContent = "✅ スマホカメラ接続中";
-                document.getElementById('pcSyncBadge').className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
-                document.getElementById('qrModalStatus').textContent = "✅ スマホと接続完了！";
+                const badge = document.getElementById('pcSyncBadge');
+                if (badge) {
+                    badge.textContent = "✅ スマホカメラ接続中";
+                    badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
+                }
+                const status = document.getElementById('qrModalStatus');
+                if (status) status.textContent = "✅ スマホと接続完了！";
 
                 conn.on('data', (data) => {
                     if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
@@ -340,11 +344,13 @@
                     const conn = peer.connect(targetRoomId, { reliable: true });
                     conn.on('open', () => {
                         activeConnection = conn;
-                        statusEl.textContent = "✅ PCと接続完了！";
-                        statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
+                        if (statusEl) {
+                            statusEl.textContent = "✅ PCと接続完了！";
+                            statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
+                        }
                     });
                     conn.on('close', () => {
-                        statusEl.textContent = "⚠️ 接続が切れました。再接続中...";
+                        if (statusEl) statusEl.textContent = "⚠️ 接続が切れました。再接続中...";
                         setTimeout(connect, 3000);
                     });
                 });
@@ -355,8 +361,8 @@
         function showQRCode() {
             const modal = document.getElementById('qrModal');
             const qrContainer = document.getElementById('qrcode');
-            modal.classList.remove('hidden');
-            qrContainer.innerHTML = '';
+            if (modal) modal.classList.remove('hidden');
+            if (qrContainer) qrContainer.innerHTML = '';
             const pairUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
             
             try {
@@ -376,15 +382,18 @@
                 fallbackImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pairUrl)}`;
                 fallbackImg.width = 200;
                 fallbackImg.height = 200;
-                qrContainer.appendChild(fallbackImg);
+                if (qrContainer) qrContainer.appendChild(fallbackImg);
             }
         }
-        function closeQRCode() { document.getElementById('qrModal').classList.add('hidden'); }
+        function closeQRCode() {
+            const modal = document.getElementById('qrModal');
+            if (modal) modal.classList.add('hidden');
+        }
 
         async function openLiveCamera() {
             const modal = document.getElementById('cameraModal');
             const video = document.getElementById('cameraVideo');
-            modal.classList.remove('hidden');
+            if (modal) modal.classList.remove('hidden');
             smoothedCorners = null;
 
             try {
@@ -395,19 +404,26 @@
             } catch (err) {
                 videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             }
-            video.srcObject = videoStream;
-            video.onloadedmetadata = () => { video.play(); startRealtimeReceiptTracking(); };
+            if (video) {
+                video.srcObject = videoStream;
+                video.onloadedmetadata = () => { video.play(); startRealtimeReceiptTracking(); };
+            }
         }
 
         function closeLiveCamera() {
             if (animFrameId) cancelAnimationFrame(animFrameId);
-            if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
-            document.getElementById('cameraModal').classList.add('hidden');
+            if (videoStream) {
+                videoStream.getTracks().forEach(t => t.stop());
+                videoStream = null;
+            }
+            const modal = document.getElementById('cameraModal');
+            if (modal) modal.classList.add('hidden');
         }
 
         function startRealtimeReceiptTracking() {
             const video = document.getElementById('cameraVideo');
             const overlay = document.getElementById('overlayCanvas');
+            if (!video || !overlay) return;
             const ctx = overlay.getContext('2d');
             const badge = document.getElementById('qualityBadge');
             const tip = document.getElementById('shutterTip');
@@ -436,9 +452,11 @@
                         }
                     }
                     const pts = smoothedCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
-                    badge.textContent = "🟢 安定捕捉完了 (フラット化)";
-                    badge.className = "bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow animate-pulse";
-                    tip.textContent = "この状態でシャッターを押してください";
+                    if (badge) {
+                        badge.textContent = "🟢 安定捕捉完了 (フラット化)";
+                        badge.className = "bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow animate-pulse";
+                    }
+                    if (tip) tip.textContent = "この状態でシャッターを押してください";
 
                     ctx.beginPath();
                     ctx.moveTo(pts[0].x, pts[0].y);
@@ -448,9 +466,11 @@
                     ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4; ctx.stroke();
                 } else {
                     smoothedCorners = null;
-                    badge.textContent = "🔍 レシートを探しています...";
-                    badge.className = "bg-slate-700 text-slate-200 font-bold px-3.5 py-1.5 rounded-full text-xs shadow";
-                    tip.textContent = "レシート全体が映るように向けてください";
+                    if (badge) {
+                        badge.textContent = "🔍 レシートを探しています...";
+                        badge.className = "bg-slate-700 text-slate-200 font-bold px-3.5 py-1.5 rounded-full text-xs shadow";
+                    }
+                    if (tip) tip.textContent = "レシート全体が映るように向けてください";
                 }
                 animFrameId = requestAnimationFrame(processFrame);
             }
@@ -490,8 +510,12 @@
             ];
         }
 
+        // =========================================================================
+        // 【シャッターボタン完全修復】撮影＆台形補正・転送処理
+        // =========================================================================
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
+            if (!video) return;
             const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
             const srcCanvas = document.createElement('canvas');
             srcCanvas.width = vw; srcCanvas.height = vh;
@@ -507,9 +531,13 @@
                 if (activeConnection && activeConnection.open) {
                     activeConnection.send({ type: 'NEW_RECEIPT_IMAGE', image: flattened });
                     mobileSentCounter++;
-                    document.getElementById('mobileSentCount').textContent = `送信済: ${mobileSentCounter}枚`;
+                    const sentCountEl = document.getElementById('mobileSentCount');
+                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
                 }
-                document.getElementById('mobileLastPreview').innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
+                const previewEl = document.getElementById('mobileLastPreview');
+                if (previewEl) {
+                    previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
+                }
             } else {
                 receiptImages.push(flattened);
                 updateThumbnailUI();
@@ -575,7 +603,7 @@
 
                     const r = srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11;
                     const g = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
-                    const b = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i12 + 2] * w01 + srcData[i11 + 2] * w11;
+                    const b = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
 
                     const dIdx = (y * outW + x) * 4;
                     dstData[dIdx] = r;
@@ -631,11 +659,17 @@
 
         function updateThumbnailUI() {
             const container = document.getElementById('thumbnailContainer');
-            document.getElementById('imageCount').textContent = receiptImages.length;
+            const countEl = document.getElementById('imageCount');
+            if (countEl) countEl.textContent = receiptImages.length;
+            if (!container) return;
+
             if (receiptImages.length === 0) {
                 container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">撮影したレシートがここにストックされます</p>`;
-                document.getElementById('analyzeBtn').disabled = true;
-                document.getElementById('analyzeBtn').className = "w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed";
+                const btn = document.getElementById('analyzeBtn');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.className = "w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed";
+                }
                 return;
             }
             container.innerHTML = receiptImages.map((img, idx) => `
@@ -649,15 +683,18 @@
                     </div>
                 </div>
             `).join('');
-            document.getElementById('analyzeBtn').disabled = false;
-            document.getElementById('analyzeBtn').className = "w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer";
+            const btn = document.getElementById('analyzeBtn');
+            if (btn) {
+                btn.disabled = false;
+                btn.className = "w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer";
+            }
         }
 
         function removeImage(idx) { receiptImages.splice(idx, 1); updateThumbnailUI(); }
         function clearImages() { receiptImages = []; updateThumbnailUI(); }
 
         // =========================================================================
-        // 【全自動ウェイト ＆ 自動リトライ機能付き 一括解析システム】
+        // 【一括解析システム（自動リトライ ＆ 安全ウェイト付き）】
         // =========================================================================
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
@@ -667,7 +704,7 @@
             const progressBar = document.getElementById('progressBar');
             const progressCount = document.getElementById('progressCount');
 
-            loadingModal.classList.remove('hidden');
+            if (loadingModal) loadingModal.classList.remove('hidden');
             
             const workingImages = [...receiptImages];
             const total = workingImages.length;
@@ -675,23 +712,23 @@
 
             for (let i = 0; i < total; i++) {
                 const currentNum = i + 1;
-                loadingTitle.textContent = `一括AI解析中 (${currentNum} / ${total}枚目)`;
+                if (loadingTitle) loadingTitle.textContent = `一括AI解析中 (${currentNum} / ${total}枚目)`;
                 const percent = Math.round((i / total) * 100);
-                progressBar.style.width = `${percent}%`;
-                progressCount.textContent = `${i} / ${total} 枚完了`;
+                if (progressBar) progressBar.style.width = `${percent}%`;
+                if (progressCount) progressCount.textContent = `${i} / ${total} 枚完了`;
 
                 let success = false;
                 let attempts = 0;
-                const maxAttempts = 2; // 失敗しても自動で1回までリトライ
+                const maxAttempts = 2;
 
                 while (!success && attempts < maxAttempts) {
                     attempts++;
                     try {
                         if (attempts > 1) {
-                            loadingText.textContent = `サーバー混雑のため、3秒後に自動リトライします... (${attempts}回目)`;
-                            await new Promise(r => setTimeout(r, 3000));
+                            if (loadingText) loadingText.textContent = `サーバー混雑のため自動リトライ中... (${attempts}回目)`;
+                            await new Promise(r => setTimeout(r, 2000));
                         } else {
-                            loadingText.textContent = `${currentNum}枚目をAI解析中...`;
+                            if (loadingText) loadingText.textContent = `${currentNum}枚目をAI解析中...`;
                         }
 
                         const response = await fetch('/api/analyze', {
@@ -725,23 +762,21 @@
                     }
                 }
 
-                // 【全自動ウェイト】1枚終わるごとに必ず3秒の息継ぎウェイトを挟んでサーバーパンクを完全に防止
                 if (i < total - 1) {
-                    loadingText.textContent = `サーバー保護のため 3秒間待機中... (次へ準備)`;
-                    for (let s = 3; s > 0; s--) {
-                        loadingText.textContent = `サーバー保護のため ${s}秒間待機中...`;
+                    for (let s = 2; s > 0; s--) {
+                        if (loadingText) loadingText.textContent = `サーバー保護のため ${s}秒間待機中...`;
                         await new Promise(r => setTimeout(r, 1000));
                     }
                 }
             }
 
-            progressBar.style.width = `100%`;
-            progressCount.textContent = `${total} / ${total} 枚完了`;
-            loadingTitle.textContent = "解析処理が終了しました！";
-            loadingText.textContent = "結果をテーブルに反映しました。";
+            if (progressBar) progressBar.style.width = `100%`;
+            if (progressCount) progressCount.textContent = `${total} / ${total} 枚完了`;
+            if (loadingTitle) loadingTitle.textContent = "解析処理が終了しました！";
+            if (loadingText) loadingText.textContent = "結果をテーブルに反映しました。";
 
             setTimeout(() => {
-                loadingModal.classList.add('hidden');
+                if (loadingModal) loadingModal.classList.add('hidden');
                 
                 receiptImages = failedIndices.map(idx => workingImages[idx]);
                 updateThumbnailUI();
@@ -762,13 +797,18 @@
         }
 
         function openColumnManager() {
-            document.getElementById('columnModal').classList.remove('hidden');
+            const modal = document.getElementById('columnModal');
+            if (modal) modal.classList.remove('hidden');
             renderColumnList();
         }
-        function closeColumnManager() { document.getElementById('columnModal').classList.add('hidden'); }
+        function closeColumnManager() {
+            const modal = document.getElementById('columnModal');
+            if (modal) modal.classList.add('hidden');
+        }
 
         function renderColumnList() {
             const cList = document.getElementById('columnListContainer');
+            if (!cList) return;
             cList.innerHTML = tableColumns.map((col, idx) => `
                 <div class="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
                     <span class="text-sm text-white">${col.label} <span class="text-xs text-slate-500">(${col.key})</span></span>
@@ -778,11 +818,13 @@
         }
 
         function addNewColumn() {
-            const lbl = document.getElementById('newColLabelInput').value.trim();
+            const input = document.getElementById('newColLabelInput');
+            if (!input) return;
+            const lbl = input.value.trim();
             if (!lbl) return;
             const key = 'custom_' + Date.now();
             tableColumns.push({ key, label: lbl });
-            document.getElementById('newColLabelInput').value = '';
+            input.value = '';
             renderColumnList();
             renderTable();
         }
