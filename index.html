@@ -8,41 +8,54 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        // ポップで明るいカスタムカラーのアクセント設定
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#eef2ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' },
+                        accent: { 500: '#06b6d4', 600: '#0891b2' }
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-indigo-500 selection:text-white">
 
     <!-- 📱 スマホ専用：カメラリモコン画面 -->
     <div id="mobileRemoteView" class="hidden min-h-screen flex flex-col justify-between p-5 bg-slate-950">
         <div class="space-y-4">
-            <div class="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-lg">
+            <div class="flex items-center justify-between bg-slate-900 border border-indigo-500/30 p-4 rounded-2xl shadow-xl">
                 <div class="flex items-center space-x-3">
-                    <div class="bg-indigo-600 p-2.5 rounded-xl">
+                    <div class="bg-gradient-to-tr from-indigo-600 to-violet-500 p-2.5 rounded-xl shadow-lg shadow-indigo-500/30">
                         <i class="fa-solid fa-mobile-screen-button text-white text-xl"></i>
                     </div>
                     <div>
                         <h1 class="text-base font-bold text-white">スマホカメラ専用モード</h1>
-                        <p id="mobileConnStatus" class="text-xs text-amber-400 mt-0.5">🔄 PCへ接続しています...</p>
+                        <p id="mobileConnStatus" class="text-xs text-cyan-400 mt-0.5">🔄 PCへ接続しています...</p>
                     </div>
                 </div>
-                <span id="mobileSentCount" class="bg-indigo-950 text-indigo-300 border border-indigo-800 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
+                <span id="mobileSentCount" class="bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
             </div>
 
             <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between">
                 <span class="text-xs font-medium text-slate-300" id="mobileModeLabel">モード: 1枚ずつ通常撮影</span>
-                <button onclick="toggleCaptureMode()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition">
+                <button onclick="toggleCaptureMode()" class="bg-violet-600 hover:bg-violet-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow-md">
                     モード切替
                 </button>
             </div>
 
-            <button onclick="openLiveCamera()" class="w-full py-10 bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition rounded-2xl shadow-2xl flex flex-col items-center justify-center space-y-3 border-2 border-indigo-400">
-                <i class="fa-solid fa-camera text-5xl text-white"></i>
+            <button onclick="openLiveCamera()" class="w-full py-12 bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500 hover:opacity-95 active:scale-95 transition rounded-2xl shadow-2xl shadow-indigo-600/30 flex flex-col items-center justify-center space-y-3 border-2 border-indigo-400/50">
+                <i class="fa-solid fa-camera text-5xl text-white drop-shadow-md"></i>
                 <span class="text-xl font-bold text-white tracking-wide">カメラを起動して撮影</span>
-                <span id="mobileModeSubLabel" class="text-xs text-indigo-200">滑らかな追従でPCへ自動転送されます</span>
+                <span id="mobileModeSubLabel" class="text-xs text-indigo-100">高精度補正でPCへ自動転送されます</span>
             </button>
 
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
                 <p class="text-xs font-semibold text-slate-400">直前にPCへ転送したレシート確認</p>
-                <div id="mobileLastPreview" class="bg-black/50 rounded-xl min-h-[140px] max-h-52 overflow-y-auto flex items-center justify-center p-2">
+                <div id="mobileLastPreview" class="bg-black/60 rounded-xl min-h-[140px] max-h-52 overflow-y-auto flex items-center justify-center p-2 border border-slate-800">
                     <p class="text-xs text-slate-500">まだ撮影されていません</p>
                 </div>
             </div>
@@ -52,128 +65,132 @@
 
     <!-- 💻 PCメイン管理画面 -->
     <div id="pcMainView">
-        <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-wrap justify-between items-center gap-4 shadow-lg">
+        <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap justify-between items-center gap-4 shadow-xl sticky top-0 z-30 backdrop-blur bg-slate-900/90">
             <div class="flex items-center space-x-3">
-                <div class="bg-indigo-600 p-2.5 rounded-xl shadow-md">
+                <div class="bg-gradient-to-tr from-indigo-600 to-violet-500 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
                     <i class="fa-solid fa-receipt text-white text-xl"></i>
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
+                    <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (シャッター完全修復版)</span>
-                        <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト版 v1.0</span>
+                        <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
             </div>
             <div class="flex items-center space-x-3">
-                <button onclick="showQRCode()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-4 py-2.5 rounded-lg font-bold transition flex items-center space-x-2 shadow-md">
-                    <i class="fa-solid fa-qrcode"></i><span>スマホをカメラとして接続 (QR)</span>
-                </button>
-                <button onclick="downloadHTML()" class="bg-slate-700 hover:bg-slate-600 text-sm px-4 py-2.5 rounded-lg font-medium transition flex items-center space-x-2">
-                    <i class="fa-solid fa-download"></i><span>HTML保存</span>
+                <!-- 明るくポップなスマホ接続ボタン -->
+                <button onclick="showQRCode()" class="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-sm px-5 py-2.5 rounded-xl font-extrabold transition flex items-center space-x-2 shadow-lg shadow-emerald-500/20 active:scale-95">
+                    <i class="fa-solid fa-qrcode text-base"></i><span>スマホをカメラとして接続 (QR)</span>
                 </button>
             </div>
         </header>
 
         <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
-            <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-6">
+            <!-- 撮影セクション -->
+            <section class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6 relative overflow-hidden">
+                <div class="absolute -right-20 -top-20 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
-                        <h2 class="text-lg font-semibold flex items-center space-x-2">
-                            <i class="fa-solid fa-camera text-indigo-400"></i>
+                        <h2 class="text-lg font-bold flex items-center space-x-2 text-white">
+                            <i class="fa-solid fa-camera text-cyan-400"></i>
                             <span>レシートを貯めて一括AI解析</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">撮影したレシートをストックし、一括解析ボタンを押すと進捗バーと一緒に1枚ずつ自動でテーブルへ反映されます。</p>
+                        <p class="text-xs text-slate-400 mt-1">撮影したレシートをストックし、一括解析ボタンを押すと自動でテーブルへバーッと反映されます。</p>
                     </div>
-                    <div class="flex items-center space-x-2 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
-                        <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white">
+                    <div class="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+                        <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md">
                             通常モード (1枚ずつ)
                         </button>
-                        <button onclick="setCaptureMode('long')" id="modeBtnLong" class="px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white">
-                            長尺レシート結合モード
+                        <button onclick="setCaptureMode('long')" id="modeBtnLong" class="px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white">
+                            長尺レシート結合
                         </button>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                    <!-- 左側：PCカメラ直接撮影ボタン（重複した点線枠を撤去してスッキリ統一） -->
                     <div class="space-y-3">
-                        <div onclick="showQRCode()" class="border-2 border-dashed border-emerald-500/60 rounded-xl p-6 text-center hover:border-emerald-400 transition cursor-pointer bg-emerald-950/20 flex flex-col items-center justify-center min-h-[140px]">
-                            <i class="fa-solid fa-mobile-retro text-3xl text-emerald-400 mb-2"></i>
-                            <p class="font-bold text-base text-emerald-300">スマホカメラを接続する</p>
-                            <p class="text-xs text-slate-400 mt-1">QRコードを表示してスマホで撮影</p>
-                        </div>
-                        <div onclick="openLiveCamera()" class="border border-slate-700 rounded-xl p-4 text-center hover:bg-slate-700/50 transition cursor-pointer bg-slate-900/50 flex items-center justify-center space-x-2">
-                            <i class="fa-solid fa-camera text-indigo-400"></i>
-                            <span class="text-xs text-slate-300 font-medium">この端末のカメラで直接撮影する</span>
-                        </div>
+                        <button onclick="openLiveCamera()" class="w-full py-10 bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700/80 hover:border-indigo-500/50 rounded-2xl text-center transition cursor-pointer flex flex-col items-center justify-center space-y-3 shadow-xl group">
+                            <div class="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-4 rounded-2xl transition duration-300">
+                                <i class="fa-solid fa-camera text-2xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-bold text-slate-200">この端末のカメラで撮影する</p>
+                                <p class="text-[11px] text-slate-400 mt-0.5">PC内蔵カメラやWebcamを使用</p>
+                            </div>
+                        </button>
                     </div>
 
-                    <div class="md:col-span-2 bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-4">
+                    <!-- ストック画像一覧 -->
+                    <div class="md:col-span-2 bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 shadow-inner">
                         <div class="flex justify-between items-center">
-                            <p class="text-sm font-medium text-indigo-300">
-                                <i class="fa-solid fa-images mr-1"></i> ストック中の画像 (<span id="imageCount">0</span>枚)
-                                <span id="modeStatusTag" class="text-[10px] bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-800 ml-2">通常モード</span>
+                            <p class="text-sm font-bold text-indigo-300 flex items-center space-x-2">
+                                <i class="fa-solid fa-images"></i><span>ストック中の画像 (<span id="imageCount">0</span>枚)</span>
+                                <span id="modeStatusTag" class="text-[10px] bg-indigo-950 text-indigo-300 px-2.5 py-0.5 rounded-full border border-indigo-800/80 ml-2">通常モード</span>
                             </p>
-                            <button onclick="clearImages()" class="text-xs text-red-400 hover:text-red-300 underline">すべてクリア</button>
+                            <button onclick="clearImages()" class="text-xs text-rose-400 hover:text-rose-300 font-semibold underline">すべてクリア</button>
                         </div>
 
-                        <div id="thumbnailContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto p-2 bg-black/40 rounded-lg min-h-[160px]">
-                            <p class="col-span-full text-center text-xs text-slate-500 py-14">撮影したレシートがここにストックされます</p>
+                        <div id="thumbnailContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto p-2 bg-slate-900/50 rounded-xl min-h-[160px] border border-slate-800/60">
+                            <p class="col-span-full text-center text-xs text-slate-500 py-14">スマホまたはPCで撮影すると、ここにレシートがストックされます</p>
                         </div>
 
-                        <button onclick="analyzeReceipts()" id="analyzeBtn" disabled class="w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed">
+                        <button onclick="analyzeReceipts()" id="analyzeBtn" disabled class="w-full bg-slate-800 text-slate-500 py-4 rounded-xl font-extrabold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed border border-slate-700/50">
                             <i class="fa-solid fa-brain"></i><span>ストックしたレシートを一括AI解析する</span>
                         </button>
                     </div>
                 </div>
             </section>
 
-            <section class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
+            <!-- 読み取り結果一覧セクション -->
+            <section class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
                 <div class="flex flex-wrap justify-between items-center gap-4">
                     <div>
-                        <h2 class="text-lg font-semibold flex items-center space-x-2">
-                            <i class="fa-solid fa-table text-indigo-400"></i>
-                            <span>解析済みレシート一覧 ＆ 編集</span>
+                        <h2 class="text-lg font-bold flex items-center space-x-2 text-white">
+                            <i class="fa-solid fa-table text-cyan-400"></i>
+                            <span>解析済みレシート一覧 ＆ 直接編集</span>
                         </h2>
                         <p class="text-xs text-slate-400 mt-1">
-                            <i class="fa-solid fa-arrows-left-right text-indigo-400 mr-1"></i>
-                            ヘッダーをドラッグ＆ドロップで並び替え、列の追加や空行の手入力が可能です。
+                            <i class="fa-solid fa-pen-to-square text-cyan-400 mr-1"></i>
+                            すべてのセル（備考や登録番号など）は**クリックして直接書き換え**が可能です。ヘッダーのドラッグ＆ドロップ並び替えにも対応。
                         </p>
                     </div>
                     <div class="flex items-center space-x-3">
-                        <button onclick="addRowManually()" class="bg-indigo-600 hover:bg-indigo-500 text-sm px-4 py-2.5 rounded-lg font-bold transition shadow-md flex items-center space-x-2">
+                        <button onclick="addRowManually()" class="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-sm px-4 py-2.5 rounded-xl font-bold transition shadow-lg shadow-indigo-600/20 flex items-center space-x-2 active:scale-95">
                             <i class="fa-solid fa-plus"></i><span>手入力で行を追加</span>
                         </button>
-                        <button onclick="openColumnManager()" class="bg-slate-700 hover:bg-slate-600 text-sm px-4 py-2.5 rounded-lg font-medium transition flex items-center space-x-2">
-                            <i class="fa-solid fa-columns"></i><span>列の管理 (追加・削除)</span>
+                        <button onclick="openColumnManager()" class="bg-slate-800 hover:bg-slate-700 text-sm px-4 py-2.5 rounded-xl font-medium transition flex items-center space-x-2 border border-slate-700">
+                            <i class="fa-solid fa-columns"></i><span>列の管理</span>
                         </button>
-                        <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-sm px-5 py-2.5 rounded-lg font-bold transition flex items-center space-x-2 shadow-md">
+                        <button onclick="exportCSV()" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm px-5 py-2.5 rounded-xl font-extrabold transition flex items-center space-x-2 shadow-lg shadow-emerald-600/20 active:scale-95 text-white">
                             <i class="fa-solid fa-file-csv"></i><span>CSV出力</span>
                         </button>
                     </div>
                 </div>
 
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/60">
                     <table class="w-full text-left border-collapse text-sm">
                         <thead>
-                            <tr id="tableHeaderRow" class="bg-slate-700/70 text-slate-200 border-b border-slate-600 select-none"></tr>
+                            <tr id="tableHeaderRow" class="bg-slate-800/80 text-slate-200 border-b border-slate-700 select-none"></tr>
                         </thead>
-                        <tbody id="receiptTableBody" class="divide-y divide-slate-700"></tbody>
+                        <tbody id="receiptTableBody" class="divide-y divide-slate-800/80"></tbody>
                     </table>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- 📷 カメラモーダル (スマホ・PC共通) -->
+    <!-- 📷 カメラモーダル -->
     <div id="cameraModal" class="hidden fixed inset-0 bg-black z-50 flex flex-col justify-between">
         <div class="flex justify-between items-center text-white z-20 bg-black/80 px-4 py-3 backdrop-blur">
             <div class="flex items-center space-x-2">
-                <span id="qualityBadge" class="bg-slate-700 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow">
+                <span id="qualityBadge" class="bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold px-4 py-1.5 rounded-full text-xs shadow">
                     🔍 レシートを探しています...
                 </span>
             </div>
-            <button onclick="closeLiveCamera()" class="text-white text-2xl px-2 hover:text-slate-300">
+            <button onclick="closeLiveCamera()" class="text-white text-2xl px-3 hover:text-slate-300">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
@@ -183,52 +200,52 @@
             <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain pointer-events-none"></canvas>
         </div>
 
-        <div class="flex flex-col items-center justify-center space-y-2 py-5 px-4 z-20 bg-black/80 backdrop-blur">
-            <p class="text-xs text-slate-300 text-center" id="shutterTip">レシート全体が映るようにカメラを向けてください</p>
-            <button onclick="takeSnapshot()" class="w-20 h-20 bg-white rounded-full border-4 border-blue-500 flex items-center justify-center shadow-2xl active:scale-95 transition cursor-pointer">
-                <div class="w-16 h-16 bg-blue-600 rounded-full"></div>
+        <div class="flex flex-col items-center justify-center space-y-2 py-6 px-4 z-20 bg-black/80 backdrop-blur">
+            <p class="text-xs text-slate-300 text-center font-medium" id="shutterTip">レシート全体が映るようにカメラを向けてください</p>
+            <button onclick="takeSnapshot()" class="w-20 h-20 bg-gradient-to-tr from-cyan-500 to-indigo-600 rounded-full border-4 border-white flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.6)] active:scale-95 transition cursor-pointer">
+                <div class="w-14 h-14 bg-white rounded-full"></div>
             </button>
         </div>
     </div>
 
     <!-- 列管理モーダル -->
-    <div id="columnModal" class="hidden fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+    <div id="columnModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <h3 class="text-lg font-bold text-white flex items-center space-x-2">
-                <i class="fa-solid fa-columns text-indigo-400"></i><span>テーブル列の管理</span>
+                <i class="fa-solid fa-columns text-cyan-400"></i><span>テーブル列の管理</span>
             </h3>
             <p class="text-xs text-slate-400">新しい項目（例: 登録番号、備考など）を追加できます。</p>
             <div id="columnListContainer" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
-            <div class="flex space-x-2 pt-2 border-t border-slate-700">
-                <input type="text" id="newColLabelInput" placeholder="新しい項目名 (例: 登録番号)" class="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500">
-                <button onclick="addNewColumn()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-bold text-white">追加</button>
+            <div class="flex space-x-2 pt-2 border-t border-slate-800">
+                <input type="text" id="newColLabelInput" placeholder="新しい項目名 (例: 登録番号)" class="flex-1 bg-slate-950 border border-slate-800 px-3.5 py-2.5 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500">
+                <button onclick="addNewColumn()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-md">追加</button>
             </div>
-            <button onclick="closeColumnManager()" class="w-full bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-medium text-sm text-white">閉じる</button>
+            <button onclick="closeColumnManager()" class="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-xl font-medium text-sm text-white">閉じる</button>
         </div>
     </div>
 
     <!-- QRコードモーダル -->
-    <div id="qrModal" class="hidden fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
+    <div id="qrModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full text-center space-y-5 shadow-2xl">
             <h3 class="text-lg font-bold text-white">スマホカメラ連携用QRコード</h3>
-            <div id="qrcode" class="bg-white p-4 rounded-xl inline-block shadow mx-auto"></div>
-            <p id="qrModalStatus" class="text-xs font-bold text-amber-400 bg-amber-950/60 border border-amber-800 py-1.5 px-3 rounded-lg">
+            <div id="qrcode" class="bg-white p-4 rounded-2xl inline-block shadow-lg mx-auto"></div>
+            <p id="qrModalStatus" class="text-xs font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 py-2 px-3 rounded-xl">
                 📱 スマホのカメラで読み取ってください
             </p>
-            <button onclick="closeQRCode()" class="w-full bg-slate-700 hover:bg-slate-600 py-2.5 rounded-lg font-medium text-sm text-white">閉じる</button>
+            <button onclick="closeQRCode()" class="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-xl font-semibold text-sm text-white border border-slate-700">閉じる</button>
         </div>
     </div>
 
     <!-- 📊 進捗バー付きスピナーローディングモーダル -->
-    <div id="loadingModal" class="hidden fixed inset-0 bg-black/85 flex flex-col items-center justify-center p-4 z-50 space-y-6">
-        <div class="animate-spin rounded-full h-20 w-20 border-4 border-indigo-500 border-t-transparent shadow-[0_0_30px_rgba(99,102,241,0.5)]"></div>
-        <div class="text-center space-y-3 max-w-sm w-full">
-            <p class="text-xl font-bold text-indigo-300" id="loadingTitle">一括AI解析中...</p>
+    <div id="loadingModal" class="hidden fixed inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 z-50 space-y-6">
+        <div class="animate-spin rounded-full h-20 w-20 border-4 border-cyan-400 border-t-transparent shadow-[0_0_35px_rgba(6,182,212,0.5)]"></div>
+        <div class="text-center space-y-3 max-w-sm w-full bg-slate-900/90 border border-slate-800 p-6 rounded-3xl shadow-2xl">
+            <p class="text-xl font-bold text-cyan-300" id="loadingTitle">一括AI解析中...</p>
             <p class="text-xs text-slate-300" id="loadingText">準備中...</p>
-            <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
-                <div id="progressBar" class="bg-indigo-500 h-full transition-all duration-300 w-0"></div>
+            <div class="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800">
+                <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full transition-all duration-300 w-0"></div>
             </div>
-            <p class="text-[11px] text-slate-400" id="progressCount">0 / 0 枚完了</p>
+            <p class="text-[11px] text-slate-400 font-semibold" id="progressCount">0 / 0 枚完了</p>
         </div>
     </div>
 
@@ -287,12 +304,12 @@
             const btnL = document.getElementById('modeBtnLong');
             const tag = document.getElementById('modeStatusTag');
             if (mode === 'normal') {
-                if (btnN) btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
-                if (btnL) btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
+                if (btnN) btnN.className = "px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md";
+                if (btnL) btnL.className = "px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white";
                 if (tag) tag.textContent = "通常モード (1枚ずつ)";
             } else {
-                if (btnN) btnN.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition text-slate-400 hover:text-white";
-                if (btnL) btnL.className = "px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white";
+                if (btnN) btnN.className = "px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white";
+                if (btnL) btnL.className = "px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md";
                 if (tag) tag.textContent = "長尺レシート結合モード";
             }
         }
@@ -454,7 +471,7 @@
                     const pts = smoothedCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
                     if (badge) {
                         badge.textContent = "🟢 安定捕捉完了 (フラット化)";
-                        badge.className = "bg-emerald-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow animate-pulse";
+                        badge.className = "bg-emerald-400 text-slate-950 font-bold px-4 py-1.5 rounded-full text-xs shadow animate-pulse";
                     }
                     if (tip) tip.textContent = "この状態でシャッターを押してください";
 
@@ -462,13 +479,13 @@
                     ctx.moveTo(pts[0].x, pts[0].y);
                     for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
                     ctx.closePath();
-                    ctx.fillStyle = "rgba(59, 130, 246, 0.28)"; ctx.fill();
-                    ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 4; ctx.stroke();
+                    ctx.fillStyle = "rgba(6, 182, 212, 0.28)"; ctx.fill();
+                    ctx.strokeStyle = "#06b6d4"; ctx.lineWidth = 4; ctx.stroke();
                 } else {
                     smoothedCorners = null;
                     if (badge) {
                         badge.textContent = "🔍 レシートを探しています...";
-                        badge.className = "bg-slate-700 text-slate-200 font-bold px-3.5 py-1.5 rounded-full text-xs shadow";
+                        badge.className = "bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold px-4 py-1.5 rounded-full text-xs shadow";
                     }
                     if (tip) tip.textContent = "レシート全体が映るように向けてください";
                 }
@@ -510,9 +527,6 @@
             ];
         }
 
-        // =========================================================================
-        // 【シャッターボタン完全修復】撮影＆台形補正・転送処理
-        // =========================================================================
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
             if (!video) return;
@@ -668,25 +682,25 @@
                 const btn = document.getElementById('analyzeBtn');
                 if (btn) {
                     btn.disabled = true;
-                    btn.className = "w-full bg-slate-700 text-slate-400 py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed";
+                    btn.className = "w-full bg-slate-800 text-slate-500 py-4 rounded-xl font-extrabold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed border border-slate-700/50";
                 }
                 return;
             }
             container.innerHTML = receiptImages.map((img, idx) => `
-                <div class="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-600 shadow-md flex flex-col">
+                <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-md flex flex-col group">
                     <div class="w-full max-h-72 overflow-y-auto bg-white">
                         <img src="${img}" class="w-full h-auto block">
                     </div>
-                    <div class="bg-slate-800 px-3 py-1.5 flex justify-between items-center border-t border-slate-700">
-                        <span class="text-xs font-medium text-indigo-300">#${idx+1} ストック中</span>
-                        <button onclick="removeImage(${idx})" class="bg-red-600 hover:bg-red-500 text-white rounded-md px-2 py-0.5 text-xs font-bold">削除</button>
+                    <div class="bg-slate-950 px-3 py-2 flex justify-between items-center border-t border-slate-800">
+                        <span class="text-xs font-semibold text-cyan-400">#${idx+1} ストック中</span>
+                        <button onclick="removeImage(${idx})" class="bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg px-2.5 py-1 text-xs font-bold transition">削除</button>
                     </div>
                 </div>
             `).join('');
             const btn = document.getElementById('analyzeBtn');
             if (btn) {
                 btn.disabled = false;
-                btn.className = "w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-lg font-bold transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer";
+                btn.className = "w-full bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500 hover:opacity-95 text-white py-4 rounded-xl font-extrabold transition shadow-xl shadow-indigo-600/30 flex items-center justify-center space-x-2 cursor-pointer active:scale-95";
             }
         }
 
@@ -810,9 +824,9 @@
             const cList = document.getElementById('columnListContainer');
             if (!cList) return;
             cList.innerHTML = tableColumns.map((col, idx) => `
-                <div class="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                <div class="flex items-center justify-between bg-slate-950 px-3.5 py-2.5 rounded-xl border border-slate-800">
                     <span class="text-sm text-white">${col.label} <span class="text-xs text-slate-500">(${col.key})</span></span>
-                    ${idx >= 5 ? `<button onclick="removeColumn(${idx})" class="text-red-400 hover:text-red-300 text-xs">削除</button>` : `<span class="text-xs text-slate-500">固定</span>`}
+                    ${idx >= 5 ? `<button onclick="removeColumn(${idx})" class="text-rose-400 hover:text-rose-300 text-xs font-bold">削除</button>` : `<span class="text-xs text-slate-500">固定</span>`}
                 </div>
             `).join('');
         }
@@ -842,13 +856,13 @@
 
             headerRow.innerHTML = tableColumns.map((col, idx) => `
                 <th draggable="true" ondragstart="handleDragStart(event, ${idx})" ondragover="handleDragOver(event)" ondrop="handleDrop(event, ${idx})"
-                    class="p-3.5 cursor-grab active:cursor-grabbing hover:bg-slate-600/60 transition border-r border-slate-700/60">
-                    <div class="flex items-center space-x-2"><i class="fa-solid fa-grip-vertical text-slate-400 text-xs"></i><span>${col.label}</span></div>
+                    class="p-4 cursor-grab active:cursor-grabbing hover:bg-slate-700/50 transition border-r border-slate-800 text-xs font-bold tracking-wider text-slate-300">
+                    <div class="flex items-center space-x-2"><i class="fa-solid fa-grip-vertical text-slate-500 text-xs"></i><span>${col.label}</span></div>
                 </th>
-            `).join('') + `<th class="p-3.5 text-center w-20">操作</th>`;
+            `).join('') + `<th class="p-4 text-center w-20 text-xs font-bold tracking-wider text-slate-300">操作</th>`;
 
             if (receiptsData.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${tableColumns.length + 1}" class="p-10 text-center text-slate-500">まだデータがありません。</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${tableColumns.length + 1}" class="p-12 text-center text-slate-500">まだデータがありません。レシートを解析するか、手入力で行を追加してください。</td></tr>`;
                 return;
             }
 
@@ -856,11 +870,16 @@
                 const cells = tableColumns.map(col => {
                     const val = item[col.key] ?? '';
                     if (col.key === 'total' || col.key === 'tax') {
-                        return `<td class="p-3 font-medium">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none">${Number(val||0).toLocaleString()}</span></td>`;
+                        return `<td class="p-4 font-semibold text-emerald-400">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2 py-1 rounded-lg outline-none transition inline-block">${Number(val||0).toLocaleString()}</span></td>`;
                     }
-                    return `<td class="p-3"><span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none inline-block">${val}</span></td>`;
+                    return `<td class="p-4 text-slate-200"><span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2 py-1 rounded-lg outline-none transition inline-block w-full">${val}</span></td>`;
                 }).join('');
-                return `<tr class="hover:bg-slate-700/30 transition">${cells}<td class="p-3 text-center"><button onclick="deleteRow(${rowIdx})" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+                return `<tr class="hover:bg-slate-900/60 transition group">
+                    ${cells}
+                    <td class="p-4 text-center">
+                        <button onclick="deleteRow(${rowIdx})" class="text-slate-500 hover:text-rose-400 transition p-2 rounded-lg hover:bg-rose-950/30"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`;
             }).join('');
         }
 
@@ -898,11 +917,6 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href = url;
             a.download = `receipts_${new Date().toISOString().slice(0,10)}.csv`; a.click();
-        }
-        function downloadHTML() {
-            const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html;charset=utf-8' });
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-            a.download = 'index.html'; a.click();
         }
     </script>
 </body>
