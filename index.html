@@ -36,24 +36,44 @@
                         <p id="mobileConnStatus" class="text-xs text-cyan-400 mt-0.5">🔄 PCへ接続しています...</p>
                     </div>
                 </div>
-                <span id="mobileSentCount" class="bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
+                <span id="mobileSentCount" class="bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full text-xs font-bold">送信済: 0件</span>
             </div>
 
-            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between">
-                <span class="text-xs font-medium text-slate-300" id="mobileModeLabel">モード: 1枚ずつ通常撮影</span>
-                <button onclick="toggleCaptureMode()" class="bg-violet-600 hover:bg-violet-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow-md">
-                    モード切替
+            <!-- 撮影モード切替（通常 / 長尺） -->
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-slate-200" id="mobileModeLabel">📸 モード: 通常撮影 (1枚ずつ)</span>
+                    <button onclick="toggleCaptureMode()" class="bg-violet-600 hover:bg-violet-500 text-white text-xs px-3.5 py-1.5 rounded-lg font-bold transition shadow-md active:scale-95">
+                        モード切替
+                    </button>
+                </div>
+                <p id="mobileModeDesc" class="text-[11px] text-slate-400">シャッターを押すごとに1件のレシートとしてPCへ即送信されます。</p>
+            </div>
+
+            <!-- 長尺レシート撮影中の保留ボックス（長尺モードで1枚以上撮った時に表示） -->
+            <div id="mobileLongPendingBox" class="hidden bg-amber-950/40 border-2 border-amber-500/60 rounded-2xl p-4 space-y-3 shadow-lg">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-extrabold text-amber-300 flex items-center space-x-1.5">
+                        <i class="fa-solid fa-scroll"></i>
+                        <span id="mobileLongPendingText">長尺レシート撮影中 (現在 0枚)</span>
+                    </span>
+                    <button onclick="clearPendingLong()" class="text-[11px] text-rose-400 underline">やり直す</button>
+                </div>
+                <p class="text-[11px] text-amber-200/80">まだ続きがある場合は「カメラを起動して撮影」で追加撮影し、撮り終えたら下の完了ボタンを押してください。</p>
+                <button onclick="finishLongReceiptGroup()" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold rounded-xl text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-circle-check text-base"></i>
+                    <span>この長尺レシートを完了してPCへ送信</span>
                 </button>
             </div>
 
-            <button onclick="openLiveCamera()" class="w-full py-12 bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500 hover:opacity-95 active:scale-95 transition rounded-2xl shadow-2xl shadow-indigo-600/30 flex flex-col items-center justify-center space-y-3 border-2 border-indigo-400/50">
+            <button onclick="openLiveCamera()" class="w-full py-11 bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500 hover:opacity-95 active:scale-95 transition rounded-2xl shadow-2xl shadow-indigo-600/30 flex flex-col items-center justify-center space-y-3 border-2 border-indigo-400/50">
                 <i class="fa-solid fa-camera text-5xl text-white drop-shadow-md"></i>
-                <span class="text-xl font-bold text-white tracking-wide">カメラを起動して撮影</span>
+                <span class="text-xl font-bold text-white tracking-wide" id="mobileCameraBtnText">カメラを起動して撮影</span>
                 <span id="mobileModeSubLabel" class="text-xs text-indigo-100">四隅の台形追従でPCへ自動転送されます</span>
             </button>
 
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-                <p class="text-xs font-semibold text-slate-400">直前にPCへ転送したレシート確認</p>
+                <p class="text-xs font-semibold text-slate-400">直前に撮影したレシート確認</p>
                 <div id="mobileLastPreview" class="bg-black/60 rounded-xl min-h-[140px] max-h-52 overflow-y-auto flex items-center justify-center p-2 border border-slate-800">
                     <p class="text-xs text-slate-500">まだ撮影されていません</p>
                 </div>
@@ -72,7 +92,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト版 v1.0</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.0</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -92,16 +112,16 @@
                     <div>
                         <h2 class="text-lg font-bold flex items-center space-x-2 text-white">
                             <i class="fa-solid fa-camera text-cyan-400"></i>
-                            <span>レシートを貯めて一括AI解析</span>
+                            <span>レシートを貯めて高速一括AI解析</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">四隅を自動追従して真っ直ぐ引き伸ばしたレシートをストックし、一括でAI解析します。</p>
+                        <p class="text-xs text-slate-400 mt-1">長尺レシートも複数枚セットで1件としてストックでき、高速AI解析で一気にデータ化します。</p>
                     </div>
                     <div class="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
                         <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md">
                             通常モード (1枚ずつ)
                         </button>
                         <button onclick="setCaptureMode('long')" id="modeBtnLong" class="px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white">
-                            長尺レシート結合
+                            長尺レシート結合モード
                         </button>
                     </div>
                 </div>
@@ -117,12 +137,20 @@
                                 <p class="text-[11px] text-slate-400 mt-0.5">PC内蔵カメラやWebcamを使用</p>
                             </div>
                         </button>
+
+                        <!-- PC側で長尺撮影中の保留表示 -->
+                        <div id="pcLongPendingBox" class="hidden bg-amber-950/40 border border-amber-500/60 rounded-2xl p-3.5 space-y-2">
+                            <p class="text-xs font-bold text-amber-300" id="pcLongPendingText">📏 長尺撮影中 (0枚)</p>
+                            <button onclick="finishLongReceiptGroup()" class="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition">
+                                ✅ この長尺レシートを完了してストック追加
+                            </button>
+                        </div>
                     </div>
 
                     <div class="md:col-span-2 bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4 shadow-inner">
                         <div class="flex justify-between items-center">
                             <p class="text-sm font-bold text-indigo-300 flex items-center space-x-2">
-                                <i class="fa-solid fa-images"></i><span>ストック中の画像 (<span id="imageCount">0</span>枚)</span>
+                                <i class="fa-solid fa-images"></i><span>ストック中のレシート (<span id="imageCount">0</span>件)</span>
                                 <span id="modeStatusTag" class="text-[10px] bg-indigo-950 text-indigo-300 px-2.5 py-0.5 rounded-full border border-indigo-800/80 ml-2">通常モード</span>
                             </p>
                             <button onclick="clearImages()" class="text-xs text-rose-400 hover:text-rose-300 font-semibold underline">すべてクリア</button>
@@ -133,7 +161,7 @@
                         </div>
 
                         <button onclick="analyzeReceipts()" id="analyzeBtn" disabled class="w-full bg-slate-800 text-slate-500 py-4 rounded-xl font-extrabold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed border border-slate-700/50">
-                            <i class="fa-solid fa-brain"></i><span>ストックしたレシートを一括AI解析する</span>
+                            <i class="fa-solid fa-bolt"></i><span>ストックしたレシートを高速一括AI解析する</span>
                         </button>
                     </div>
                 </div>
@@ -141,15 +169,16 @@
 
             <section class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
                 <div class="flex flex-wrap justify-between items-center gap-4">
-                    <div>
+                    <div class="space-y-1.5">
                         <h2 class="text-lg font-bold flex items-center space-x-2 text-white">
                             <i class="fa-solid fa-table text-cyan-400"></i>
                             <span>解析済みレシート一覧 ＆ 直接編集</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">
-                            <i class="fa-solid fa-pen-to-square text-cyan-400 mr-1"></i>
-                            すべての項目（空欄の備考や登録番号も含む）は**枠をクリックして直接入力・修正**できます。
-                        </p>
+                        <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                            <span><i class="fa-solid fa-pen-to-square text-cyan-400 mr-1"></i>セルをクリックして直接修正できます。</span>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-rose-950/80 border border-rose-500/70 text-rose-200 font-semibold">🟥 赤枠：読み取り不可・未記載 (要入力)</span>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-md bg-amber-950/80 border border-amber-500/70 text-amber-200 font-semibold">🟨 黄枠：文字かすれ等で自信なし (要確認)</span>
+                        </div>
                     </div>
                     <div class="flex items-center space-x-3">
                         <button onclick="addRowManually()" class="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-sm px-4 py-2.5 rounded-xl font-bold transition shadow-lg shadow-indigo-600/20 flex items-center space-x-2 active:scale-95">
@@ -180,9 +209,12 @@
     <div id="cameraModal" class="hidden fixed inset-0 bg-black z-50 flex flex-col justify-between">
         <div class="flex justify-between items-center text-white z-20 bg-black/80 px-4 py-3 backdrop-blur">
             <div class="flex items-center space-x-2">
-                <span id="qualityBadge" class="bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold px-4 py-1.5 rounded-full text-xs shadow">
+                <span id="qualityBadge" class="bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold px-3.5 py-1.5 rounded-full text-xs shadow">
                     🔍 レシートを探しています...
                 </span>
+                <button onclick="toggleCaptureMode()" id="cameraModalModeBtn" class="bg-indigo-950/90 text-indigo-200 border border-indigo-500/50 px-3 py-1 rounded-full text-[11px] font-bold">
+                    通常モード
+                </button>
             </div>
             <button onclick="closeLiveCamera()" class="text-white text-2xl px-3 hover:text-slate-300">
                 <i class="fa-solid fa-xmark"></i>
@@ -192,13 +224,30 @@
         <div class="relative flex-1 flex items-center justify-center overflow-hidden bg-black">
             <video id="cameraVideo" autoplay playsinline muted class="w-full h-full object-contain"></video>
             <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain pointer-events-none"></canvas>
+            <!-- 長尺撮影時のフラッシュ通知バッジ -->
+            <div id="cameraLongToast" class="hidden absolute top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-950 font-extrabold px-4 py-1.5 rounded-full text-xs shadow-xl">
+                📏 長尺1枚目を追加しました！続けて下半分を撮影してください
+            </div>
         </div>
 
-        <div class="flex flex-col items-center justify-center space-y-2 py-6 px-4 z-20 bg-black/80 backdrop-blur">
+        <div class="flex flex-col items-center justify-center space-y-3 py-5 px-4 z-20 bg-black/85 backdrop-blur">
             <p class="text-xs text-slate-300 text-center font-medium" id="shutterTip">レシート全体が映るようにカメラを向けてください</p>
-            <button onclick="takeSnapshot()" class="w-20 h-20 bg-gradient-to-tr from-cyan-500 to-indigo-600 rounded-full border-4 border-white flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.6)] active:scale-95 transition cursor-pointer">
-                <div class="w-14 h-14 bg-white rounded-full"></div>
-            </button>
+            
+            <div class="flex items-center justify-center space-x-6 w-full max-w-md">
+                <!-- シャッターボタン -->
+                <button onclick="takeSnapshot()" class="w-20 h-20 bg-gradient-to-tr from-cyan-500 to-indigo-600 rounded-full border-4 border-white flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.6)] active:scale-95 transition cursor-pointer shrink-0">
+                    <div class="w-14 h-14 bg-white rounded-full"></div>
+                </button>
+
+                <!-- 長尺モード時のみカメラ画面内に表示される「完了」ボタン -->
+                <button id="cameraFinishLongBtn" onclick="finishLongReceiptGroup()" class="hidden px-5 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold rounded-2xl text-sm shadow-xl active:scale-95 transition flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-check text-lg"></i>
+                    <div class="text-left">
+                        <div class="leading-tight">長尺レシート完了</div>
+                        <div id="cameraFinishLongSub" class="text-[10px] font-bold opacity-80">0枚を1件として保存</div>
+                    </div>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -234,17 +283,21 @@
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 z-50 space-y-6">
         <div class="animate-spin rounded-full h-20 w-20 border-4 border-cyan-400 border-t-transparent shadow-[0_0_35px_rgba(6,182,212,0.5)]"></div>
         <div class="text-center space-y-3 max-w-sm w-full bg-slate-900/90 border border-slate-800 p-6 rounded-3xl shadow-2xl">
-            <p class="text-xl font-bold text-cyan-300" id="loadingTitle">一括AI解析中...</p>
+            <p class="text-xl font-bold text-cyan-300" id="loadingTitle">高速一括AI解析中...</p>
             <p class="text-xs text-slate-300" id="loadingText">準備中...</p>
             <div class="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800">
                 <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full transition-all duration-300 w-0"></div>
             </div>
-            <p class="text-[11px] text-slate-400 font-semibold" id="progressCount">0 / 0 枚完了</p>
+            <p class="text-[11px] text-slate-400 font-semibold" id="progressCount">0 / 0 件完了</p>
         </div>
     </div>
 
     <script>
-        let receiptImages = [];
+        // ストック一覧（各要素は { mode: 'normal' | 'long', images: [base64, ...] }）
+        let receiptItems = [];
+        // 長尺モードで完了ボタンを押すまでの一時保持配列
+        let pendingLongImages = [];
+
         let receiptsData = [];
         let videoStream = null;
         let animFrameId = null;
@@ -280,6 +333,7 @@
             const params = new URLSearchParams(window.location.search);
             const targetRoom = params.get('room');
             renderTable();
+            updateModeUI();
 
             if (targetRoom) {
                 isMobileRemote = true;
@@ -294,31 +348,117 @@
         });
 
         function setCaptureMode(mode) {
-            captureMode = mode;
-            const btnN = document.getElementById('modeBtnNormal');
-            const btnL = document.getElementById('modeBtnLong');
-            const tag = document.getElementById('modeStatusTag');
-            if (mode === 'normal') {
-                if (btnN) btnN.className = "px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md";
-                if (btnL) btnL.className = "px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white";
-                if (tag) tag.textContent = "通常モード (1枚ずつ)";
-            } else {
-                if (btnN) btnN.className = "px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white";
-                if (btnL) btnL.className = "px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md";
-                if (tag) tag.textContent = "長尺レシート結合モード";
+            if (captureMode === 'long' && mode === 'normal' && pendingLongImages.length > 0) {
+                finishLongReceiptGroup();
             }
+            captureMode = mode;
+            updateModeUI();
         }
 
         function toggleCaptureMode() {
-            captureMode = (captureMode === 'normal') ? 'long' : 'normal';
+            const nextMode = (captureMode === 'normal') ? 'long' : 'normal';
+            setCaptureMode(nextMode);
+        }
+
+        function updateModeUI() {
+            const btnN = document.getElementById('modeBtnNormal');
+            const btnL = document.getElementById('modeBtnLong');
+            const tag = document.getElementById('modeStatusTag');
             const lbl = document.getElementById('mobileModeLabel');
+            const desc = document.getElementById('mobileModeDesc');
             const sub = document.getElementById('mobileModeSubLabel');
+            const camModeBtn = document.getElementById('cameraModalModeBtn');
+
             if (captureMode === 'normal') {
-                if (lbl) lbl.textContent = "モード: 1枚ずつ通常撮影";
-                if (sub) sub.textContent = "撮影された画像はそれぞれ独立した行として処理されます";
+                if (btnN) btnN.className = "px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md";
+                if (btnL) btnL.className = "px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white";
+                if (tag) tag.textContent = "通常モード (1枚ずつ)";
+                if (lbl) lbl.textContent = "📸 モード: 通常撮影 (1枚ずつ)";
+                if (desc) desc.textContent = "シャッターを押すごとに1件のレシートとしてPCへ即送信されます。";
+                if (sub) sub.textContent = "四隅の台形追従でPCへ自動転送されます";
+                if (camModeBtn) {
+                    camModeBtn.textContent = "現在: 通常モード (1枚ずつ)";
+                    camModeBtn.className = "bg-indigo-950/90 text-indigo-200 border border-indigo-500/50 px-3 py-1 rounded-full text-[11px] font-bold";
+                }
             } else {
-                if (lbl) lbl.textContent = "モード: 長尺レシート結合";
-                if (sub) sub.textContent = "複数枚撮るとまとめて1件のデータに統合されます";
+                if (btnN) btnN.className = "px-4 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white";
+                if (btnL) btnL.className = "px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md";
+                if (tag) tag.textContent = "長尺レシート結合モード";
+                if (lbl) lbl.textContent = "📏 モード: 長尺レシート結合 (複数枚で1件)";
+                if (desc) desc.textContent = "長いレシートを何回かに分けて撮影し、「完了」を押すと1枚のレシートとして結合送信されます。";
+                if (sub) sub.textContent = "撮影後に「長尺レシート完了」を押すと1件としてまとまります";
+                if (camModeBtn) {
+                    camModeBtn.textContent = "現在: 📏 長尺結合モード";
+                    camModeBtn.className = "bg-amber-500 text-slate-950 px-3 py-1 rounded-full text-[11px] font-extrabold";
+                }
+            }
+            updatePendingLongUI();
+        }
+
+        function updatePendingLongUI() {
+            const count = pendingLongImages.length;
+            const mBox = document.getElementById('mobileLongPendingBox');
+            const mText = document.getElementById('mobileLongPendingText');
+            const mCamBtnText = document.getElementById('mobileCameraBtnText');
+            const pBox = document.getElementById('pcLongPendingBox');
+            const pText = document.getElementById('pcLongPendingText');
+            const camFinishBtn = document.getElementById('cameraFinishLongBtn');
+            const camFinishSub = document.getElementById('cameraFinishLongSub');
+
+            if (captureMode === 'long' && count > 0) {
+                if (mBox) mBox.classList.remove('hidden');
+                if (mText) mText.textContent = `長尺レシート撮影中 (現在 ${count}枚)`;
+                if (mCamBtnText) mCamBtnText.textContent = `カメラを起動して続き (${count + 1}枚目) を撮影`;
+                if (pBox) pBox.classList.remove('hidden');
+                if (pText) pText.textContent = `📏 長尺レシート撮影中 (現在 ${count}枚)`;
+                if (camFinishBtn) camFinishBtn.classList.remove('hidden');
+                if (camFinishSub) camFinishSub.textContent = `${count}枚を1件として保存`;
+            } else {
+                if (mBox) mBox.classList.add('hidden');
+                if (mCamBtnText) mCamBtnText.textContent = "カメラを起動して撮影";
+                if (pBox) pBox.classList.add('hidden');
+                if (camFinishBtn) camFinishBtn.classList.add('hidden');
+            }
+        }
+
+        function clearPendingLong() {
+            pendingLongImages = [];
+            updatePendingLongUI();
+        }
+
+        // 長尺レシートの「完了」ボタン処理（複数枚を1件のセットとして確定・送信）
+        function finishLongReceiptGroup() {
+            if (pendingLongImages.length === 0) return;
+            const groupImages = [...pendingLongImages];
+            pendingLongImages = [];
+            updatePendingLongUI();
+
+            const toast = document.getElementById('cameraLongToast');
+            if (toast) toast.classList.add('hidden');
+
+            closeLiveCamera();
+
+            if (isMobileRemote) {
+                if (activeConnection && activeConnection.open) {
+                    activeConnection.send({
+                        type: 'NEW_RECEIPT_ITEM',
+                        mode: groupImages.length > 1 ? 'long' : 'normal',
+                        images: groupImages
+                    });
+                    mobileSentCounter++;
+                    const sentCountEl = document.getElementById('mobileSentCount');
+                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}件`;
+                }
+                const previewEl = document.getElementById('mobileLastPreview');
+                if (previewEl) {
+                    previewEl.innerHTML = `<div class="space-y-2 w-full"><p class="text-xs text-emerald-400 font-bold text-center">✅ 長尺レシート (${groupImages.length}枚組) を送信しました！続けて次の撮影が可能です</p><img src="${groupImages[0]}" class="w-full h-auto rounded border border-slate-700"></div>`;
+                }
+            } else {
+                receiptItems.push({
+                    mode: groupImages.length > 1 ? 'long' : 'normal',
+                    images: groupImages
+                });
+                updateThumbnailUI();
             }
         }
 
@@ -338,8 +478,18 @@
                 if (status) status.textContent = "✅ スマホと接続完了！";
 
                 conn.on('data', (data) => {
-                    if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
-                        receiptImages.push(data.image);
+                    if (!data) return;
+                    if (data.type === 'NEW_RECEIPT_ITEM' && Array.isArray(data.images) && data.images.length > 0) {
+                        receiptItems.push({
+                            mode: data.mode || (data.images.length > 1 ? 'long' : 'normal'),
+                            images: data.images
+                        });
+                        updateThumbnailUI();
+                    } else if (data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
+                        receiptItems.push({
+                            mode: 'normal',
+                            images: [data.image]
+                        });
                         updateThumbnailUI();
                     }
                 });
@@ -408,6 +558,7 @@
             if (modal) modal.classList.remove('hidden');
             smoothedCorners = null;
             missedFrames = 0;
+            updatePendingLongUI();
 
             try {
                 videoStream = await navigator.mediaDevices.getUserMedia({
@@ -431,10 +582,11 @@
             }
             const modal = document.getElementById('cameraModal');
             if (modal) modal.classList.add('hidden');
+            updatePendingLongUI();
         }
 
         // =========================================================================
-        // 【完全版】最大連結成分抽出 ＋ 4頂点極値検出 ＋ 台形傾き4段階精度判定
+        // 【完全維持】最大連結成分抽出 ＋ 4頂点極値検出 ＋ 台形傾き4段階精度判定
         // =========================================================================
         function startRealtimeReceiptTracking() {
             const video = document.getElementById('cameraVideo');
@@ -483,7 +635,13 @@
                         badge.textContent = quality.badgeText;
                         badge.className = quality.badgeClass;
                     }
-                    if (tip) tip.textContent = quality.tipText;
+                    if (tip) {
+                        if (captureMode === 'long' && pendingLongImages.length > 0) {
+                            tip.textContent = `現在${pendingLongImages.length}枚追加済。シャッターで続きを追加、右の「完了」で1件として保存します`;
+                        } else {
+                            tip.textContent = quality.tipText;
+                        }
+                    }
 
                     // 1. 四隅を結ぶ台形・多角形の描画
                     ctx.beginPath();
@@ -513,7 +671,7 @@
                 } else {
                     if (badge) {
                         badge.textContent = "🔍 レシートを探しています...";
-                        badge.className = "bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold px-4 py-1.5 rounded-full text-xs shadow";
+                        badge.className = "bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold px-3.5 py-1.5 rounded-full text-xs shadow";
                     }
                     if (tip) tip.textContent = "レシート全体が背景と重ならないようカメラを向けてください";
                 }
@@ -522,7 +680,6 @@
             animFrameId = requestAnimationFrame(processFrame);
         }
 
-        // 台形の歪み具合（傾き）からリアルタイムで4段階の精度を判定する関数
         function evaluateQuadGeometry(pts) {
             const topW = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
             const bottomW = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
@@ -540,7 +697,7 @@
             if (distortion < 0.08) {
                 return {
                     badgeText: "🟢 最高精度 (真上・フラット)",
-                    badgeClass: "bg-emerald-400 text-slate-950 font-extrabold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    badgeClass: "bg-emerald-400 text-slate-950 font-extrabold px-3.5 py-1.5 rounded-full text-xs shadow-lg",
                     tipText: "完璧な角度です！このままシャッターを押してください",
                     strokeColor: "#3b82f6",
                     fillColor: "rgba(59, 130, 246, 0.28)",
@@ -549,7 +706,7 @@
             } else if (distortion < 0.16) {
                 return {
                     badgeText: "🔵 高精度 (良好)",
-                    badgeClass: "bg-blue-500 text-white font-bold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    badgeClass: "bg-blue-500 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow-lg",
                     tipText: "良好です。シャッターを押すと自動で真っ直ぐ補正されます",
                     strokeColor: "#3b82f6",
                     fillColor: "rgba(59, 130, 246, 0.25)",
@@ -558,7 +715,7 @@
             } else if (distortion < 0.28) {
                 return {
                     badgeText: "🟠 中精度 (やや斜め)",
-                    badgeClass: "bg-amber-500 text-slate-950 font-bold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    badgeClass: "bg-amber-500 text-slate-950 font-bold px-3.5 py-1.5 rounded-full text-xs shadow-lg",
                     tipText: "少し斜めです。真上から撮るとより文字がくっきり読めます",
                     strokeColor: "#f59e0b",
                     fillColor: "rgba(245, 158, 11, 0.24)",
@@ -567,7 +724,7 @@
             } else {
                 return {
                     badgeText: "🔴 低精度 (傾き大)",
-                    badgeClass: "bg-rose-500 text-white font-bold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    badgeClass: "bg-rose-500 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow-lg",
                     tipText: "斜めに歪んでいます。カメラをレシートの真上へ移動させてください",
                     strokeColor: "#f43f5e",
                     fillColor: "rgba(244, 63, 94, 0.24)",
@@ -576,27 +733,23 @@
             }
         }
 
-        // 白い紙の最大塊（Blob）を抽出し、その4つの角（極値頂点）を正確に求める関数
         function detectReceiptBlobAndCorners(ctx, w, h) {
             const imgData = ctx.getImageData(0, 0, w, h).data;
             const totalPixels = w * h;
             const whiteness = new Float32Array(totalPixels);
 
-            // 1. 各ピクセルの「白さスコア（高輝度・低彩度）」を算出
             let sumW = 0;
             for (let i = 0; i < totalPixels; i++) {
                 const idx = i * 4;
                 const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
                 const lum = 0.299 * r + 0.587 * g + 0.114 * b;
                 const sat = Math.max(r, g, b) - Math.min(r, g, b);
-                // 茶色い木目や色付きの背景を抑え、白い紙だけを際立たせるスコア
                 const score = Math.max(0, lum - sat * 1.15);
                 whiteness[i] = score;
                 sumW += score;
             }
             const meanW = sumW / totalPixels;
 
-            // パーセンタイルから上位の明るさを調べる
             const hist = new Int32Array(256);
             for (let i = 0; i < totalPixels; i++) {
                 const bin = Math.min(255, Math.floor(whiteness[i]));
@@ -608,12 +761,10 @@
                 if (acc >= totalPixels * 0.15) { p85 = b; break; }
             }
 
-            // 背景と白い紙のコントラストが小さすぎる場合（机だけ・暗い画面など）は未検出にする
             if (p85 < 115 || (p85 - meanW) < 16) return null;
 
             const threshold = Math.max(110, meanW + (p85 - meanW) * 0.38);
 
-            // 2. 二値化マスク作成
             const rawMask = new Uint8Array(totalPixels);
             for (let y = 2; y < h - 2; y++) {
                 for (let x = 2; x < w - 2; x++) {
@@ -623,7 +774,6 @@
                 }
             }
 
-            // 3. 3x3 膨張処理（レシート内の印字やかすれによる分断をつなげる）
             const mask = new Uint8Array(totalPixels);
             for (let y = 2; y < h - 2; y++) {
                 for (let x = 2; x < w - 2; x++) {
@@ -638,7 +788,6 @@
                 }
             }
 
-            // 4. BFS（幅優先探索）で「最大の連結した白い塊（レシート本体）」だけを抽出
             const visited = new Uint8Array(totalPixels);
             const queue = new Int32Array(totalPixels);
             let bestBlob = null;
@@ -675,18 +824,15 @@
                         }
 
                         const area = tail;
-                        // 小さすぎるノイズや、画面全体を覆うような背景は除外
                         if (area < totalPixels * 0.04 || area > totalPixels * 0.88) continue;
 
                         const bw = maxX - minX + 1;
                         const bh = maxY - minY + 1;
                         if (bw < w * 0.18 || bh < h * 0.18) continue;
 
-                        // 充填率（紙の塊としての詰まり具合）をチェック
                         const fillRatio = area / (bw * bh);
                         if (fillRatio < 0.35) continue;
 
-                        // 画面中央に近い大きな塊を優先
                         const centerX = sumX / area;
                         const centerY = sumY / area;
                         const distFromCenter = Math.hypot((centerX - w * 0.5) / w, (centerY - h * 0.5) / h);
@@ -706,12 +852,10 @@
 
             if (!bestBlob) return null;
 
-            // 5. 抽出したレシート塊から「本物の四隅（4つの極値頂点）」を特定
             const { pixels, minX, maxX, minY, maxY, cx, cy } = bestBlob;
             const spanX = Math.max(20, maxX - minX);
             const spanY = Math.max(20, maxY - minY);
 
-            // 縦長・横長どんなレシートでも確実に4つの角にヒットするよう正規化スケールで評価
             let maxTL = -1e9, maxTR = -1e9, maxBR = -1e9, maxBL = -1e9;
             for (let i = 0; i < pixels.length; i++) {
                 const p = pixels[i];
@@ -732,7 +876,6 @@
                 if (sBL > maxBL) maxBL = sBL;
             }
 
-            // 角の1ピクセルのギザギザに引っ張られないよう、各角の極値トップ付近の座標を取得
             const tol = 0.045;
             let tlX = 0, tlY = 0, tlC = 0;
             let trX = 0, trY = 0, trC = 0;
@@ -756,13 +899,12 @@
             if (!tlC || !trC || !brC || !blC) return null;
 
             const corners = [
-                { x: (tlX / tlC) / w, y: (tlY / tlC) / h }, // 左上 (TL)
-                { x: (trX / trC) / w, y: (trY / trC) / h }, // 右上 (TR)
-                { x: (brX / brC) / w, y: (brY / brC) / h }, // 右下 (BR)
-                { x: (blX / blC) / w, y: (blY / blC) / h }  // 左下 (BL)
+                { x: (tlX / tlC) / w, y: (tlY / tlC) / h },
+                { x: (trX / trC) / w, y: (trY / trC) / h },
+                { x: (brX / brC) / w, y: (brY / brC) / h },
+                { x: (blX / blC) / w, y: (blY / blC) / h }
             ];
 
-            // 四角形が潰れていないか最終検証
             const topEdge = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
             const bottomEdge = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
             const leftEdge = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
@@ -783,7 +925,6 @@
             srcCanvas.width = vw; srcCanvas.height = vh;
             srcCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh);
 
-            // シャッターを押した瞬間にまだ四隅がロックされていない場合はその場で再検出を試みる
             let normCorners = smoothedCorners;
             if (!normCorners) {
                 const sw = 180, sh = Math.round((vh / vw) * sw);
@@ -798,23 +939,48 @@
             }
 
             const srcPts = normCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
+            const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
+
+            // 長尺レシート結合モードの時は完了ボタンを押すまでグループに蓄積する
+            if (captureMode === 'long') {
+                pendingLongImages.push(flattened);
+                updatePendingLongUI();
+
+                const toast = document.getElementById('cameraLongToast');
+                if (toast) {
+                    toast.textContent = `📏 長尺 ${pendingLongImages.length}枚目を追加しました！続きを撮るか「完了」を押してください`;
+                    toast.classList.remove('hidden');
+                }
+                const previewEl = document.getElementById('mobileLastPreview');
+                if (previewEl) {
+                    previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-amber-500/50">`;
+                }
+                return;
+            }
+
+            // 通常モードの時は1枚ずつ即座に確定・送信してカメラを閉じる
             closeLiveCamera();
 
-            // 青く囲まれた四隅だけを横幅100%いっぱいの真っ直ぐな長方形に台形補正して切り抜く
-            const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
             if (isMobileRemote) {
                 if (activeConnection && activeConnection.open) {
-                    activeConnection.send({ type: 'NEW_RECEIPT_IMAGE', image: flattened });
+                    activeConnection.send({
+                        type: 'NEW_RECEIPT_ITEM',
+                        mode: 'normal',
+                        images: [flattened]
+                    });
                     mobileSentCounter++;
                     const sentCountEl = document.getElementById('mobileSentCount');
-                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
+                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}件`;
                 }
                 const previewEl = document.getElementById('mobileLastPreview');
                 if (previewEl) {
                     previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
                 }
             } else {
-                receiptImages.push(flattened);
+                receiptItems.push({
+                    mode: 'normal',
+                    images: [flattened]
+                });
                 updateThumbnailUI();
             }
         }
@@ -828,7 +994,7 @@
             const avgW = Math.max(100, (topW + bottomW) / 2);
             const avgH = Math.max(100, (leftH + rightH) / 2);
 
-            const outW = 640;
+            const outW = 600;
             const aspect = Math.min(3.5, Math.max(0.45, avgH / avgW));
             const outH = Math.round(outW * aspect);
 
@@ -902,7 +1068,7 @@
             }
 
             oCtx.putImageData(outImgData, 0, 0);
-            return outCanvas.toDataURL('image/jpeg', 0.88);
+            return outCanvas.toDataURL('image/jpeg', 0.82);
         }
 
         function computeHomography(src, dst) {
@@ -935,10 +1101,10 @@
         function updateThumbnailUI() {
             const container = document.getElementById('thumbnailContainer');
             const countEl = document.getElementById('imageCount');
-            if (countEl) countEl.textContent = receiptImages.length;
+            if (countEl) countEl.textContent = receiptItems.length;
             if (!container) return;
 
-            if (receiptImages.length === 0) {
+            if (receiptItems.length === 0) {
                 container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">スマホまたはPCで撮影すると、ここに真っ直ぐなレシートがストックされます</p>`;
                 const btn = document.getElementById('analyzeBtn');
                 if (btn) {
@@ -947,17 +1113,32 @@
                 }
                 return;
             }
-            container.innerHTML = receiptImages.map((img, idx) => `
-                <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-md flex flex-col group">
-                    <div class="w-full max-h-72 overflow-y-auto bg-white">
-                        <img src="${img}" class="w-full h-auto block">
+            container.innerHTML = receiptItems.map((item, idx) => {
+                const isLong = item.images.length > 1 || item.mode === 'long';
+                const badgeHtml = isLong
+                    ? `<span class="text-xs font-extrabold text-amber-400">#${idx+1} 📏長尺結合 (${item.images.length}枚組)</span>`
+                    : `<span class="text-xs font-semibold text-cyan-400">#${idx+1} 通常 (1枚)</span>`;
+
+                const imgsHtml = item.images.map((img, subIdx) => `
+                    <div class="relative">
+                        ${item.images.length > 1 ? `<span class="absolute top-1 left-1 bg-black/75 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded">${subIdx+1}/${item.images.length}枚目</span>` : ''}
+                        <img src="${img}" class="w-full h-auto block border-b border-slate-300">
                     </div>
-                    <div class="bg-slate-950 px-3 py-2 flex justify-between items-center border-t border-slate-800">
-                        <span class="text-xs font-semibold text-cyan-400">#${idx+1} 台形補正・最大化済</span>
-                        <button onclick="removeImage(${idx})" class="bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg px-2.5 py-1 text-xs font-bold transition">削除</button>
+                `).join('');
+
+                return `
+                    <div class="relative bg-slate-900 rounded-2xl overflow-hidden border ${isLong ? 'border-amber-500/60' : 'border-slate-800'} shadow-md flex flex-col group">
+                        <div class="w-full max-h-72 overflow-y-auto bg-white">
+                            ${imgsHtml}
+                        </div>
+                        <div class="bg-slate-950 px-3 py-2 flex justify-between items-center border-t border-slate-800">
+                            ${badgeHtml}
+                            <button onclick="removeImage(${idx})" class="bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg px-2.5 py-1 text-xs font-bold transition">削除</button>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
+
             const btn = document.getElementById('analyzeBtn');
             if (btn) {
                 btn.disabled = false;
@@ -965,11 +1146,18 @@
             }
         }
 
-        function removeImage(idx) { receiptImages.splice(idx, 1); updateThumbnailUI(); }
-        function clearImages() { receiptImages = []; updateThumbnailUI(); }
+        function removeImage(idx) { receiptItems.splice(idx, 1); updateThumbnailUI(); }
+        function clearImages() { receiptItems = []; updateThumbnailUI(); }
 
+        // =========================================================================
+        // 【高速一括AI解析システム（長尺セット統合・短時間ウェイト）】
+        // =========================================================================
         async function analyzeReceipts() {
-            if (receiptImages.length === 0) return;
+            if (pendingLongImages.length > 0) {
+                finishLongReceiptGroup();
+            }
+            if (receiptItems.length === 0) return;
+
             const loadingModal = document.getElementById('loadingModal');
             const loadingText = document.getElementById('loadingText');
             const loadingTitle = document.getElementById('loadingTitle');
@@ -978,16 +1166,23 @@
 
             if (loadingModal) loadingModal.classList.remove('hidden');
             
-            const workingImages = [...receiptImages];
-            const total = workingImages.length;
+            const workingItems = [...receiptItems];
+            const total = workingItems.length;
             let failedIndices = [];
 
             for (let i = 0; i < total; i++) {
                 const currentNum = i + 1;
-                if (loadingTitle) loadingTitle.textContent = `一括AI解析中 (${currentNum} / ${total}枚目)`;
+                const item = workingItems[i];
+                const isLongSet = item.images.length > 1 || item.mode === 'long';
+
+                if (loadingTitle) {
+                    loadingTitle.textContent = isLongSet
+                        ? `長尺レシート結合解析中 (${currentNum} / ${total}件目・${item.images.length}枚組)`
+                        : `高速AI解析中 (${currentNum} / ${total}件目)`;
+                }
                 const percent = Math.round((i / total) * 100);
                 if (progressBar) progressBar.style.width = `${percent}%`;
-                if (progressCount) progressCount.textContent = `${i} / ${total} 枚完了`;
+                if (progressCount) progressCount.textContent = `${i} / ${total} 件完了`;
 
                 let success = false;
                 let attempts = 0;
@@ -997,16 +1192,19 @@
                     attempts++;
                     try {
                         if (attempts > 1) {
-                            if (loadingText) loadingText.textContent = `サーバー混雑のため自動リトライ中... (${attempts}回目)`;
-                            await new Promise(r => setTimeout(r, 2000));
+                            if (loadingText) loadingText.textContent = `予備モデルへ切り替えて再試行中...`;
+                            await new Promise(r => setTimeout(r, 800));
                         } else {
-                            if (loadingText) loadingText.textContent = `${currentNum}枚目をAI解析中...`;
+                            if (loadingText) loadingText.textContent = `${currentNum}件目をスピード解析しています...`;
                         }
 
                         const response = await fetch('/api/analyze', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ image: workingImages[i], mode: captureMode })
+                            body: JSON.stringify({
+                                images: item.images,
+                                mode: isLongSet ? 'long' : 'normal'
+                            })
                         });
                         
                         const rawText = await response.text();
@@ -1014,53 +1212,51 @@
                         try {
                             resJson = JSON.parse(rawText);
                         } catch (e) {
-                            throw new Error("AIサーバー応答エラー (" + rawText.slice(0, 35) + "...)");
+                            throw new Error("応答解析エラー");
                         }
 
                         if (!response.ok) throw new Error(resJson.error || '解析失敗');
 
-                        if (Array.isArray(resJson)) {
-                            resJson.forEach(item => receiptsData.unshift(item));
-                        } else {
-                            receiptsData.unshift(resJson);
-                        }
+                        const rows = Array.isArray(resJson) ? resJson : [resJson];
+                        rows.forEach(r => {
+                            if (!Array.isArray(r.uncertain)) r.uncertain = [];
+                            receiptsData.unshift(r);
+                        });
                         renderTable();
                         success = true;
                     } catch (err) {
-                        console.warn(`${currentNum}枚目 試行 ${attempts}回目失敗:`, err.message);
+                        console.warn(`${currentNum}件目 試行 ${attempts}回目失敗:`, err.message);
                         if (attempts >= maxAttempts) {
                             failedIndices.push(i);
                         }
                     }
                 }
 
+                // 待機時間を0.4秒に大幅短縮してサクサク進める
                 if (i < total - 1) {
-                    for (let s = 2; s > 0; s--) {
-                        if (loadingText) loadingText.textContent = `サーバー保護のため ${s}秒間待機中...`;
-                        await new Promise(r => setTimeout(r, 1000));
-                    }
+                    await new Promise(r => setTimeout(r, 400));
                 }
             }
 
             if (progressBar) progressBar.style.width = `100%`;
-            if (progressCount) progressCount.textContent = `${total} / ${total} 枚完了`;
-            if (loadingTitle) loadingTitle.textContent = "解析処理が終了しました！";
-            if (loadingText) loadingText.textContent = "結果をテーブルに反映しました。";
+            if (progressCount) progressCount.textContent = `${total} / ${total} 件完了`;
+            if (loadingTitle) loadingTitle.textContent = "すべての解析が完了しました！";
+            if (loadingText) loadingText.textContent = "赤枠・黄枠の項目がある場合はクリックしてご確認ください。";
 
             setTimeout(() => {
                 if (loadingModal) loadingModal.classList.add('hidden');
                 
-                receiptImages = failedIndices.map(idx => workingImages[idx]);
+                receiptItems = failedIndices.map(idx => workingItems[idx]);
                 updateThumbnailUI();
 
                 if (failedIndices.length > 0) {
-                    alert(`${failedIndices.length}枚の解析に失敗しました（失敗した画像はストックに残っています）。時間をおいて再度お試しください。`);
+                    alert(`${failedIndices.length}件の解析に失敗しました（ストックに残っています）。再度お試しください。`);
                 }
-            }, 800);
+            }, 500);
         }
 
         function addRowManually() {
-            const newRow = {};
+            const newRow = { uncertain: [] };
             tableColumns.forEach(col => newRow[col.key] = col.key === 'total' || col.key === 'tax' ? 0 : '');
             newRow.date = new Date().toISOString().slice(0,10);
             newRow.category = '消耗品費';
@@ -1107,6 +1303,9 @@
             renderTable();
         }
 
+        // =========================================================================
+        // 【赤セル（未記載・判断不可）＆ 黄セル（自信なし）ハイライト対応テーブル】
+        // =========================================================================
         function renderTable() {
             const headerRow = document.getElementById('tableHeaderRow');
             const tbody = document.getElementById('receiptTableBody');
@@ -1125,13 +1324,50 @@
             }
 
             tbody.innerHTML = receiptsData.map((item, rowIdx) => {
+                const uncertainList = Array.isArray(item.uncertain) ? item.uncertain : [];
+                const confirmedList = Array.isArray(item.confirmed) ? item.confirmed : [];
+
                 const cells = tableColumns.map(col => {
-                    const val = item[col.key] ?? '';
+                    const rawVal = item[col.key];
+                    const strVal = String(rawVal ?? '').trim();
+                    const isConfirmed = confirmedList.includes(col.key);
+                    const isUncertain = !isConfirmed && uncertainList.includes(col.key);
+
+                    // 数値セル（金額・消費税）の判定
                     if (col.key === 'total' || col.key === 'tax') {
-                        return `<td class="p-3 font-semibold text-emerald-400">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2 py-1 rounded-lg outline-none transition inline-block min-w-[60px]">${Number(val||0).toLocaleString()}</span></td>`;
+                        const numVal = Number(rawVal || 0);
+                        // 合計金額が0または未入力の場合は赤枠、自信がない場合は黄枠
+                        const isMissingTotal = !isConfirmed && col.key === 'total' && numVal === 0;
+                        let boxClass = "focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2.5 py-1.5 rounded-lg outline-none transition inline-block min-w-[70px] border ";
+                        if (isMissingTotal) {
+                            boxClass += "bg-rose-950/70 border-rose-500 text-rose-200 font-extrabold";
+                        } else if (isUncertain) {
+                            boxClass += "bg-amber-950/70 border-amber-500 text-amber-200 font-extrabold";
+                        } else {
+                            boxClass += "border-transparent text-emerald-400 font-semibold hover:border-slate-700";
+                        }
+
+                        return `<td class="p-3">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="${boxClass}">${numVal.toLocaleString()}</span></td>`;
                     }
-                    return `<td class="p-3 text-slate-200"><div contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 hover:bg-slate-800/50 border border-transparent hover:border-slate-700 px-2.5 py-1.5 rounded-lg outline-none transition min-w-[90px] min-h-[32px] cursor-text">${val}</div></td>`;
+
+                    // テキストセル（利用日・店舗名・勘定科目・登録番号・備考など）の判定
+                    // 空欄の場合は赤枠（備考以外の項目が空欄、またはAIが判断できなかった場合）
+                    const isEmpty = strVal === '';
+                    const isRedCell = !isConfirmed && isEmpty && col.key !== 'note';
+                    const isYellowCell = !isRedCell && isUncertain;
+
+                    let divClass = "focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2.5 py-1.5 rounded-lg outline-none transition min-w-[95px] min-h-[34px] cursor-text border ";
+                    if (isRedCell) {
+                        divClass += "bg-rose-950/60 border-rose-500/80 text-rose-200 placeholder-rose-400";
+                    } else if (isYellowCell) {
+                        divClass += "bg-amber-950/60 border-amber-500/80 text-amber-200 font-semibold";
+                    } else {
+                        divClass += "border-transparent hover:bg-slate-800/50 hover:border-slate-700 text-slate-200";
+                    }
+
+                    return `<td class="p-3"><div contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="${divClass}">${strVal}</div></td>`;
                 }).join('');
+
                 return `<tr class="hover:bg-slate-900/60 transition group">
                     ${cells}
                     <td class="p-3 text-center">
@@ -1152,14 +1388,23 @@
         }
 
         function updateCellValue(rowIdx, key, text) {
-            if (!receiptsData[rowIdx]) return;
+            const row = receiptsData[rowIdx];
+            if (!row) return;
+
             if (key === 'total' || key === 'tax') {
                 const num = Number(text.replace(/[^0-9.-]+/g, ''));
-                receiptsData[rowIdx][key] = isNaN(num) ? 0 : num;
-                renderTable();
+                row[key] = isNaN(num) ? 0 : num;
             } else {
-                receiptsData[rowIdx][key] = text.trim();
+                row[key] = text.trim();
             }
+
+            // 編集・確認したセルは赤・黄ハイライトを解除して通常表示にする
+            if (!Array.isArray(row.confirmed)) row.confirmed = [];
+            if (!row.confirmed.includes(key)) row.confirmed.push(key);
+            if (Array.isArray(row.uncertain)) {
+                row.uncertain = row.uncertain.filter(k => k !== key);
+            }
+            renderTable();
         }
 
         function deleteRow(idx) { receiptsData.splice(idx, 1); renderTable(); }
