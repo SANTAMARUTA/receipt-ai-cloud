@@ -60,7 +60,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (完全同期安定版)</span>
+                        <span class="text-xs text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">プロフェッショナル版 (全自動ウェイト制御)</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -83,7 +83,7 @@
                             <i class="fa-solid fa-camera text-indigo-400"></i>
                             <span>レシートを貯めて一括AI解析</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">撮影したレシートをストックし、一括解析ボタンを押すと進捗バーと一緒に1枚ずつ自動でテーブルへ反映されます。</p>
+                        <p class="text-xs text-slate-400 mt-1">大量のレシートもサーバーに負荷をかけないよう自動ウェイト＆安全リトライ付きで順次解析されます。</p>
                     </div>
                     <div class="flex items-center space-x-2 bg-slate-900 p-1.5 rounded-xl border border-slate-700">
                         <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-indigo-600 text-white">
@@ -575,7 +575,7 @@
 
                     const r = srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11;
                     const g = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
-                    const b = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
+                    const b = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i12 + 2] * w01 + srcData[i11 + 2] * w11;
 
                     const dIdx = (y * outW + x) * 4;
                     dstData[dIdx] = r;
@@ -657,79 +657,99 @@
         function clearImages() { receiptImages = []; updateThumbnailUI(); }
 
         // =========================================================================
-        // 【1枚ずつ正確に順次解析 ＆ ストックの同期ズレ完全解消版】
+        // 【全自動ウェイト ＆ 自動リトライ機能付き 一括解析システム】
         // =========================================================================
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
             const loadingModal = document.getElementById('loadingModal');
             const loadingText = document.getElementById('loadingText');
+            const loadingTitle = document.getElementById('loadingTitle');
             const progressBar = document.getElementById('progressBar');
             const progressCount = document.getElementById('progressCount');
 
             loadingModal.classList.remove('hidden');
             
-            // 解析開始時点のストック画像を丸ごとコピーして処理対象にする
             const workingImages = [...receiptImages];
             const total = workingImages.length;
             let failedIndices = [];
 
             for (let i = 0; i < total; i++) {
                 const currentNum = i + 1;
-                loadingText.textContent = `${currentNum} / ${total} 枚目をAI解析中...`;
+                loadingTitle.textContent = `一括AI解析中 (${currentNum} / ${total}枚目)`;
                 const percent = Math.round((i / total) * 100);
                 progressBar.style.width = `${percent}%`;
                 progressCount.textContent = `${i} / ${total} 枚完了`;
 
-                try {
-                    const response = await fetch('/api/analyze', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image: workingImages[i], mode: captureMode })
-                    });
-                    
-                    const rawText = await response.text();
-                    let resJson;
+                let success = false;
+                let attempts = 0;
+                const maxAttempts = 2; // 失敗しても自動で1回までリトライ
+
+                while (!success && attempts < maxAttempts) {
+                    attempts++;
                     try {
-                        resJson = JSON.parse(rawText);
-                    } catch (e) {
-                        throw new Error("AIサーバー応答エラー (" + rawText.slice(0, 40) + "...)");
-                    }
+                        if (attempts > 1) {
+                            loadingText.textContent = `サーバー混雑のため、3秒後に自動リトライします... (${attempts}回目)`;
+                            await new Promise(r => setTimeout(r, 3000));
+                        } else {
+                            loadingText.textContent = `${currentNum}枚目をAI解析中...`;
+                        }
 
-                    if (!response.ok) throw new Error(resJson.error || '解析失敗');
+                        const response = await fetch('/api/analyze', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image: workingImages[i], mode: captureMode })
+                        });
+                        
+                        const rawText = await response.text();
+                        let resJson;
+                        try {
+                            resJson = JSON.parse(rawText);
+                        } catch (e) {
+                            throw new Error("AIサーバー応答エラー (" + rawText.slice(0, 35) + "...)");
+                        }
 
-                    // 成功したデータをテーブルへ即座に追加
-                    if (Array.isArray(resJson)) {
-                        resJson.forEach(item => receiptsData.unshift(item));
-                    } else {
-                        receiptsData.unshift(resJson);
-                    }
-                    renderTable();
+                        if (!response.ok) throw new Error(resJson.error || '解析失敗');
 
-                    // サーバー負荷軽減のウェイト
-                    if (i < total - 1) {
-                        await new Promise(r => setTimeout(r, 800));
+                        if (Array.isArray(resJson)) {
+                            resJson.forEach(item => receiptsData.unshift(item));
+                        } else {
+                            receiptsData.unshift(resJson);
+                        }
+                        renderTable();
+                        success = true;
+                    } catch (err) {
+                        console.warn(`${currentNum}枚目 試行 ${attempts}回目失敗:`, err.message);
+                        if (attempts >= maxAttempts) {
+                            failedIndices.push(i);
+                        }
                     }
-                } catch (err) {
-                    console.error(`${currentNum}枚目エラー:`, err);
-                    failedIndices.push(i);
+                }
+
+                // 【全自動ウェイト】1枚終わるごとに必ず3秒の息継ぎウェイトを挟んでサーバーパンクを完全に防止
+                if (i < total - 1) {
+                    loadingText.textContent = `サーバー保護のため 3秒間待機中... (次へ準備)`;
+                    for (let s = 3; s > 0; s--) {
+                        loadingText.textContent = `サーバー保護のため ${s}秒間待機中...`;
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
                 }
             }
 
             progressBar.style.width = `100%`;
             progressCount.textContent = `${total} / ${total} 枚完了`;
-            loadingText.textContent = "解析処理が終了しました！";
+            loadingTitle.textContent = "解析処理が終了しました！";
+            loadingText.textContent = "結果をテーブルに反映しました。";
 
             setTimeout(() => {
                 loadingModal.classList.add('hidden');
                 
-                // 失敗した画像だけをストックに残し、成功した画像はストックから綺麗に削除
                 receiptImages = failedIndices.map(idx => workingImages[idx]);
                 updateThumbnailUI();
 
                 if (failedIndices.length > 0) {
                     alert(`${failedIndices.length}枚の解析に失敗しました（失敗した画像はストックに残っています）。時間をおいて再度お試しください。`);
                 }
-            }, 600);
+            }, 800);
         }
 
         function addRowManually() {
@@ -796,7 +816,7 @@
                     if (col.key === 'total' || col.key === 'tax') {
                         return `<td class="p-3 font-medium">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none">${Number(val||0).toLocaleString()}</span></td>`;
                     }
-                    return `<td class="p-3"><span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 thext-xs rounded outline-none inline-block">${val}</span></td>`;
+                    return `<td class="p-3"><span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-700 px-1 rounded outline-none inline-block">${val}</span></td>`;
                 }).join('');
                 return `<tr class="hover:bg-slate-700/30 transition">${cells}<td class="p-3 text-center"><button onclick="deleteRow(${rowIdx})" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button></td></tr>`;
             }).join('');
