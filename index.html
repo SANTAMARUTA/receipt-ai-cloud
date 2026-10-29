@@ -94,7 +94,7 @@
                             <i class="fa-solid fa-camera text-cyan-400"></i>
                             <span>レシートを貯めて一括AI解析</span>
                         </h2>
-                        <p class="text-xs text-slate-400 mt-1">撮影したレシートをストックし、一括解析ボタンを押すと自動でテーブルへバーッと反映されます。</p>
+                        <p class="text-xs text-slate-400 mt-1">四隅を自動追従して真っ直ぐ引き伸ばしたレシートをストックし、一括でAI解析します。</p>
                     </div>
                     <div class="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
                         <button onclick="setCaptureMode('normal')" id="modeBtnNormal" class="px-4 py-2 rounded-xl text-xs font-bold transition bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md">
@@ -129,7 +129,7 @@
                         </div>
 
                         <div id="thumbnailContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto p-2 bg-slate-900/50 rounded-xl min-h-[160px] border border-slate-800/60">
-                            <p class="col-span-full text-center text-xs text-slate-500 py-14">スマホまたはPCで撮影すると、ここにレシートがストックされます</p>
+                            <p class="col-span-full text-center text-xs text-slate-500 py-14">スマホまたはPCで撮影すると、ここに真っ直ぐなレシートがストックされます</p>
                         </div>
 
                         <button onclick="analyzeReceipts()" id="analyzeBtn" disabled class="w-full bg-slate-800 text-slate-500 py-4 rounded-xl font-extrabold transition shadow-lg flex items-center justify-center space-x-2 cursor-not-allowed border border-slate-700/50">
@@ -148,7 +148,7 @@
                         </h2>
                         <p class="text-xs text-slate-400 mt-1">
                             <i class="fa-solid fa-pen-to-square text-cyan-400 mr-1"></i>
-                            すべてのセル（備考や登録番号など）は**クリックして直接書き換え**が可能です。ヘッダーのドラッグ＆ドロップ並び替えにも対応。
+                            すべての項目（空欄の備考や登録番号も含む）は**枠をクリックして直接入力・修正**できます。
                         </p>
                     </div>
                     <div class="flex items-center space-x-3">
@@ -208,10 +208,10 @@
             <h3 class="text-lg font-bold text-white flex items-center space-x-2">
                 <i class="fa-solid fa-columns text-cyan-400"></i><span>テーブル列の管理</span>
             </h3>
-            <p class="text-xs text-slate-400">新しい項目（例: 登録番号、備考など）を追加できます。</p>
+            <p class="text-xs text-slate-400">新しい項目（例: 支払方法、担当者など）を追加できます。</p>
             <div id="columnListContainer" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
             <div class="flex space-x-2 pt-2 border-t border-slate-800">
-                <input type="text" id="newColLabelInput" placeholder="新しい項目名 (例: 登録番号)" class="flex-1 bg-slate-950 border border-slate-800 px-3.5 py-2.5 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500">
+                <input type="text" id="newColLabelInput" placeholder="新しい項目名" class="flex-1 bg-slate-950 border border-slate-800 px-3.5 py-2.5 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500">
                 <button onclick="addNewColumn()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-md">追加</button>
             </div>
             <button onclick="closeColumnManager()" class="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-xl font-medium text-sm text-white">閉じる</button>
@@ -249,6 +249,7 @@
         let videoStream = null;
         let animFrameId = null;
         let smoothedCorners = null;
+        let missedFrames = 0;
         let workCanvas = document.createElement('canvas');
         let workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
 
@@ -406,6 +407,7 @@
             const video = document.getElementById('cameraVideo');
             if (modal) modal.classList.remove('hidden');
             smoothedCorners = null;
+            missedFrames = 0;
 
             try {
                 videoStream = await navigator.mediaDevices.getUserMedia({
@@ -432,7 +434,7 @@
         }
 
         // =========================================================================
-        // 【本物の台形四隅自動追従アルゴリズム】レシートの4つの角を個別に検出
+        // 【完全版】最大連結成分抽出 ＋ 4頂点極値検出 ＋ 台形傾き4段階精度判定
         // =========================================================================
         function startRealtimeReceiptTracking() {
             const video = document.getElementById('cameraVideo');
@@ -450,164 +452,327 @@
                 overlay.width = vw; overlay.height = vh;
                 ctx.clearRect(0, 0, vw, vh);
 
-                const sw = 200, sh = Math.round((vh / vw) * sw);
+                const sw = 180, sh = Math.round((vh / vw) * sw);
                 workCanvas.width = sw; workCanvas.height = sh;
                 workCtx.drawImage(video, 0, 0, sw, sh);
 
-                const detected = detectTrueReceiptQuad(workCtx, sw, sh);
+                const detected = detectReceiptBlobAndCorners(workCtx, sw, sh);
                 if (detected) {
+                    missedFrames = 0;
                     if (!smoothedCorners) {
-                        smoothedCorners = detected;
+                        smoothedCorners = detected.map(p => ({ x: p.x, y: p.y }));
                     } else {
-                        const alpha = 0.25; // 滑らかな追従
+                        const alpha = 0.25;
                         for (let i = 0; i < 4; i++) {
                             smoothedCorners[i].x = smoothedCorners[i].x * (1 - alpha) + detected[i].x * alpha;
                             smoothedCorners[i].y = smoothedCorners[i].y * (1 - alpha) + detected[i].y * alpha;
                         }
                     }
-                    const pts = smoothedCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
-                    if (badge) {
-                        badge.textContent = "🟢 レシート四隅追従中 (台形補正)";
-                        badge.className = "bg-emerald-400 text-slate-950 font-bold px-4 py-1.5 rounded-full text-xs shadow animate-pulse";
-                    }
-                    if (tip) tip.textContent = "この状態でシャッターを押してください";
-
-                    // 斜めのレシートに合わせた「本物の台形」を描画
-                    ctx.beginPath();
-                    ctx.moveTo(pts[0].x, pts[0].y); // 左上
-                    ctx.lineTo(pts[1].x, pts[1].y); // 右上
-                    ctx.lineTo(pts[2].x, pts[2].y); // 右下
-                    ctx.lineTo(pts[3].x, pts[3].y); // 左下
-                    ctx.closePath();
-                    ctx.fillStyle = "rgba(6, 182, 212, 0.32)"; ctx.fill();
-                    ctx.strokeStyle = "#06b6d4"; ctx.lineWidth = 4; ctx.stroke();
                 } else {
-                    smoothedCorners = null;
+                    missedFrames++;
+                    if (missedFrames > 6) {
+                        smoothedCorners = null;
+                    }
+                }
+
+                if (smoothedCorners) {
+                    const pts = smoothedCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
+                    const quality = evaluateQuadGeometry(pts);
+
+                    if (badge) {
+                        badge.textContent = quality.badgeText;
+                        badge.className = quality.badgeClass;
+                    }
+                    if (tip) tip.textContent = quality.tipText;
+
+                    // 1. 四隅を結ぶ台形・多角形の描画
+                    ctx.beginPath();
+                    ctx.moveTo(pts[0].x, pts[0].y);
+                    ctx.lineTo(pts[1].x, pts[1].y);
+                    ctx.lineTo(pts[2].x, pts[2].y);
+                    ctx.lineTo(pts[3].x, pts[3].y);
+                    ctx.closePath();
+                    ctx.fillStyle = quality.fillColor;
+                    ctx.fill();
+                    ctx.strokeStyle = quality.strokeColor;
+                    ctx.lineWidth = Math.max(4, Math.round(vw * 0.005));
+                    ctx.lineJoin = "round";
+                    ctx.stroke();
+
+                    // 2. 四隅の角マーカー（丸いドット）を描画
+                    const radius = Math.max(8, Math.round(vw * 0.012));
+                    for (let i = 0; i < 4; i++) {
+                        ctx.beginPath();
+                        ctx.arc(pts[i].x, pts[i].y, radius, 0, Math.PI * 2);
+                        ctx.fillStyle = quality.cornerColor;
+                        ctx.fill();
+                        ctx.strokeStyle = "#ffffff";
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                    }
+                } else {
                     if (badge) {
                         badge.textContent = "🔍 レシートを探しています...";
                         badge.className = "bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold px-4 py-1.5 rounded-full text-xs shadow";
                     }
-                    if (tip) tip.textContent = "レシート全体がカメラに収まるように向けてください";
+                    if (tip) tip.textContent = "レシート全体が背景と重ならないようカメラを向けてください";
                 }
                 animFrameId = requestAnimationFrame(processFrame);
             }
             animFrameId = requestAnimationFrame(processFrame);
         }
 
-        // 机の上の「白い紙（レシート）」の四隅の座標を個別に算出する関数
-        function detectTrueReceiptQuad(ctx, w, h) {
-            const imgData = ctx.getImageData(0, 0, w, h).data;
-            let sumX = 0, sumY = 0, count = 0;
-            const mask = new Uint8Array(w * h);
+        // 台形の歪み具合（傾き）からリアルタイムで4段階の精度を判定する関数
+        function evaluateQuadGeometry(pts) {
+            const topW = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+            const bottomW = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
+            const leftH = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
+            const rightH = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+            const diag1 = Math.hypot(pts[2].x - pts[0].x, pts[2].y - pts[0].y);
+            const diag2 = Math.hypot(pts[3].x - pts[1].x, pts[3].y - pts[1].y);
 
-            // 1. まず白いレシートの領域をピクセル単位で特定
-            for (let y = 5; y < h - 5; y++) {
-                for (let x = 5; x < w - 5; x++) {
-                    const idx = (y * w + x) * 4;
-                    const r = imgData[idx], g = imgData[idx+1], b = imgData[idx+2];
-                    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                    const sat = Math.max(r, g, b) - Math.min(r, g, b);
-                    
-                    if (lum > 120 && sat < 50) {
-                        mask[y * w + x] = 1;
-                        sumX += x; sumY += y;
-                        count++;
-                    }
-                }
+            const wDiff = Math.abs(topW - bottomW) / Math.max(topW, bottomW, 1);
+            const hDiff = Math.abs(leftH - rightH) / Math.max(leftH, rightH, 1);
+            const dDiff = Math.abs(diag1 - diag2) / Math.max(diag1, diag2, 1);
+
+            const distortion = Math.max(wDiff, hDiff, dDiff * 0.85);
+
+            if (distortion < 0.08) {
+                return {
+                    badgeText: "🟢 最高精度 (真上・フラット)",
+                    badgeClass: "bg-emerald-400 text-slate-950 font-extrabold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    tipText: "完璧な角度です！このままシャッターを押してください",
+                    strokeColor: "#3b82f6",
+                    fillColor: "rgba(59, 130, 246, 0.28)",
+                    cornerColor: "#60a5fa"
+                };
+            } else if (distortion < 0.16) {
+                return {
+                    badgeText: "🔵 高精度 (良好)",
+                    badgeClass: "bg-blue-500 text-white font-bold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    tipText: "良好です。シャッターを押すと自動で真っ直ぐ補正されます",
+                    strokeColor: "#3b82f6",
+                    fillColor: "rgba(59, 130, 246, 0.25)",
+                    cornerColor: "#60a5fa"
+                };
+            } else if (distortion < 0.28) {
+                return {
+                    badgeText: "🟠 中精度 (やや斜め)",
+                    badgeClass: "bg-amber-500 text-slate-950 font-bold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    tipText: "少し斜めです。真上から撮るとより文字がくっきり読めます",
+                    strokeColor: "#f59e0b",
+                    fillColor: "rgba(245, 158, 11, 0.24)",
+                    cornerColor: "#fbbf24"
+                };
+            } else {
+                return {
+                    badgeText: "🔴 低精度 (傾き大)",
+                    badgeClass: "bg-rose-500 text-white font-bold px-4 py-1.5 rounded-full text-xs shadow-lg",
+                    tipText: "斜めに歪んでいます。カメラをレシートの真上へ移動させてください",
+                    strokeColor: "#f43f5e",
+                    fillColor: "rgba(244, 63, 94, 0.24)",
+                    cornerColor: "#fb7185"
+                };
+            }
+        }
+
+        // 白い紙の最大塊（Blob）を抽出し、その4つの角（極値頂点）を正確に求める関数
+        function detectReceiptBlobAndCorners(ctx, w, h) {
+            const imgData = ctx.getImageData(0, 0, w, h).data;
+            const totalPixels = w * h;
+            const whiteness = new Float32Array(totalPixels);
+
+            // 1. 各ピクセルの「白さスコア（高輝度・低彩度）」を算出
+            let sumW = 0;
+            for (let i = 0; i < totalPixels; i++) {
+                const idx = i * 4;
+                const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                const sat = Math.max(r, g, b) - Math.min(r, g, b);
+                // 茶色い木目や色付きの背景を抑え、白い紙だけを際立たせるスコア
+                const score = Math.max(0, lum - sat * 1.15);
+                whiteness[i] = score;
+                sumW += score;
+            }
+            const meanW = sumW / totalPixels;
+
+            // パーセンタイルから上位の明るさを調べる
+            const hist = new Int32Array(256);
+            for (let i = 0; i < totalPixels; i++) {
+                const bin = Math.min(255, Math.floor(whiteness[i]));
+                hist[bin]++;
+            }
+            let acc = 0, p85 = 0;
+            for (let b = 255; b >= 0; b--) {
+                acc += hist[b];
+                if (acc >= totalPixels * 0.15) { p85 = b; break; }
             }
 
-            // レシートと判定できる面積がない場合は除外
-            if (count < (w * h * 0.05) || count > (w * h * 0.85)) return null;
+            // 背景と白い紙のコントラストが小さすぎる場合（机だけ・暗い画面など）は未検出にする
+            if (p85 < 115 || (p85 - meanW) < 16) return null;
 
-            const cx = sumX / count;
-            const cy = sumY / count;
+            const threshold = Math.max(110, meanW + (p85 - meanW) * 0.38);
 
-            // 2. 重心から四方に光線（レイ）を飛ばし、白い紙の端（エッジ）を正確に検知して4つの角を決定する
-            let tl = { x: w, y: h }, tr = { x: 0, y: h }, br = { x: 0, y: 0 }, bl = { x: w, y: 0 };
-            let foundTop = false, foundBottom = false, foundLeft = false, foundRight = false;
-
-            // 各象限ごとに端を探す簡易コーナー抽出
-            let minTopY = h, maxBottomY = 0, minLeftX = w, maxRightX = 0;
-            let tl_x = w, tr_x = 0, bl_x = w, br_x = 0;
-
+            // 2. 二値化マスク作成
+            const rawMask = new Uint8Array(totalPixels);
             for (let y = 2; y < h - 2; y++) {
                 for (let x = 2; x < w - 2; x++) {
-                    if (mask[y * w + x] === 1) {
-                        // 上端付近
-                        if (y < cy && x >= cx - (w*0.3) && x <= cx + (w*0.3)) {
-                            if (y < minTopY) { minTopY = y; }
+                    if (whiteness[y * w + x] >= threshold) {
+                        rawMask[y * w + x] = 1;
+                    }
+                }
+            }
+
+            // 3. 3x3 膨張処理（レシート内の印字やかすれによる分断をつなげる）
+            const mask = new Uint8Array(totalPixels);
+            for (let y = 2; y < h - 2; y++) {
+                for (let x = 2; x < w - 2; x++) {
+                    const idx = y * w + x;
+                    if (
+                        rawMask[idx] ||
+                        rawMask[idx - 1] || rawMask[idx + 1] ||
+                        rawMask[idx - w] || rawMask[idx + w]
+                    ) {
+                        mask[idx] = 1;
+                    }
+                }
+            }
+
+            // 4. BFS（幅優先探索）で「最大の連結した白い塊（レシート本体）」だけを抽出
+            const visited = new Uint8Array(totalPixels);
+            const queue = new Int32Array(totalPixels);
+            let bestBlob = null;
+            let bestScore = 0;
+
+            for (let y = 4; y < h - 4; y++) {
+                for (let x = 4; x < w - 4; x++) {
+                    const startIdx = y * w + x;
+                    if (mask[startIdx] && !visited[startIdx]) {
+                        let head = 0, tail = 0;
+                        queue[tail++] = startIdx;
+                        visited[startIdx] = 1;
+
+                        let minX = x, maxX = x, minY = y, maxY = y;
+                        let sumX = 0, sumY = 0;
+
+                        while (head < tail) {
+                            const curr = queue[head++];
+                            const cy = Math.floor(curr / w);
+                            const cx = curr - cy * w;
+
+                            sumX += cx;
+                            sumY += cy;
+                            if (cx < minX) minX = cx;
+                            if (cx > maxX) maxX = cx;
+                            if (cy < minY) minY = cy;
+                            if (cy > maxY) maxY = cy;
+
+                            const n1 = curr - 1, n2 = curr + 1, n3 = curr - w, n4 = curr + w;
+                            if (cx > 2 && mask[n1] && !visited[n1]) { visited[n1] = 1; queue[tail++] = n1; }
+                            if (cx < w - 3 && mask[n2] && !visited[n2]) { visited[n2] = 1; queue[tail++] = n2; }
+                            if (cy > 2 && mask[n3] && !visited[n3]) { visited[n3] = 1; queue[tail++] = n3; }
+                            if (cy < h - 3 && mask[n4] && !visited[n4]) { visited[n4] = 1; queue[tail++] = n4; }
                         }
-                        // 下端付近
-                        if (y > cy && x >= cx - (w*0.3) && x <= cx + (w*0.3)) {
-                            if (y > maxBottomY) { maxBottomY = y; }
-                        }
-                        // 左側の端
-                        if (x < cx && y >= cy - (h*0.3) && y <= cy + (h*0.3)) {
-                            if (x < minLeftX) { minLeftX = x; }
-                        }
-                        // 右側の端
-                        if (x > cx && y >= cy - (h*0.3) && y <= cy + (h*0.3)) {
-                            if (x > maxRightX) { maxRightX = x; }
+
+                        const area = tail;
+                        // 小さすぎるノイズや、画面全体を覆うような背景は除外
+                        if (area < totalPixels * 0.04 || area > totalPixels * 0.88) continue;
+
+                        const bw = maxX - minX + 1;
+                        const bh = maxY - minY + 1;
+                        if (bw < w * 0.18 || bh < h * 0.18) continue;
+
+                        // 充填率（紙の塊としての詰まり具合）をチェック
+                        const fillRatio = area / (bw * bh);
+                        if (fillRatio < 0.35) continue;
+
+                        // 画面中央に近い大きな塊を優先
+                        const centerX = sumX / area;
+                        const centerY = sumY / area;
+                        const distFromCenter = Math.hypot((centerX - w * 0.5) / w, (centerY - h * 0.5) / h);
+                        const blobScore = area * (1.2 - distFromCenter);
+
+                        if (blobScore > bestScore) {
+                            bestScore = blobScore;
+                            bestBlob = {
+                                pixels: queue.slice(0, tail),
+                                minX, maxX, minY, maxY,
+                                cx: centerX, cy: centerY
+                            };
                         }
                     }
                 }
             }
 
-            // 四隅の座標を斜め（台形）に対応できるように抽出
-            let pTL = { x: w * 0.25, y: h * 0.2 };
-            let pTR = { x: w * 0.75, y: h * 0.2 };
-            let pBR = { x: w * 0.75, y: h * 0.8 };
-            let pBL = { x: w * 0.25, y: h * 0.8 };
+            if (!bestBlob) return null;
 
-            let tCount = 0, bCount = 0, lCount = 0, rCount = 0;
-            let sumTL_x = 0, sumTL_y = 0, sumTR_x = 0, sumTR_y = 0;
-            let sumBR_x = 0, sumBR_y = 0, sumBL_x = 0, sumBL_y = 0;
+            // 5. 抽出したレシート塊から「本物の四隅（4つの極値頂点）」を特定
+            const { pixels, minX, maxX, minY, maxY, cx, cy } = bestBlob;
+            const spanX = Math.max(20, maxX - minX);
+            const spanY = Math.max(20, maxY - minY);
 
-            for (let y = 5; y < h - 5; y++) {
-                for (let x = 5; x < w - 5; x++) {
-                    if (mask[y * w + x] === 1) {
-                        // 近傍に黒（背景）があるピクセルを外周エッジとみなす
-                        let isEdge = false;
-                        for (let dy = -2; dy <= 2; dy++) {
-                            for (let dx = -2; dx <= 2; dx++) {
-                                const nx = x + dx, ny = y + dy;
-                                if (nx >= 0 && nx < w && ny >= 0 && ny < h && mask[ny * w + nx] === 0) {
-                                    isEdge = true;
-                                    break;
-                                }
-                            }
-                            if (isEdge) break;
-                        }
+            // 縦長・横長どんなレシートでも確実に4つの角にヒットするよう正規化スケールで評価
+            let maxTL = -1e9, maxTR = -1e9, maxBR = -1e9, maxBL = -1e9;
+            for (let i = 0; i < pixels.length; i++) {
+                const p = pixels[i];
+                const py = Math.floor(p / w);
+                const px = p - py * w;
 
-                        if (isEdge) {
-                            if (x < cx && y < cy) { sumTL_x += x; sumTL_y += y; tCount++; }
-                            else if (x >= cx && y < cy) { sumTR_x += x; sumTR_y += y; rCount++; }
-                            else if (x >= cx && y >= cy) { sumBR_x += x; sumBR_y += y; bCount++; }
-                            else if (x < cx && y >= cy) { sumBL_x += x; sumBL_y += y; lCount++; }
-                        }
-                    }
-                }
+                const nx = (px - cx) / spanX;
+                const ny = (py - cy) / spanY;
+
+                const sTL = -nx - ny;
+                const sTR = +nx - ny;
+                const sBR = +nx + ny;
+                const sBL = -nx + ny;
+
+                if (sTL > maxTL) maxTL = sTL;
+                if (sTR > maxTR) maxTR = sTR;
+                if (sBR > maxBR) maxBR = sBR;
+                if (sBL > maxBL) maxBL = sBL;
             }
 
-            // エッジが見つかった場合は平均座標を四隅に設定
-            if (tCount > 3 && rCount > 3 && bCount > 3 && lCount > 3) {
-                pTL = { x: sumTL_x / tCount, y: sumTL_y / tCount };
-                pTR = { x: sumTR_x / rCount, y: sumTR_y / rCount };
-                pBR = { x: sumBR_x / bCount, y: sumBR_y / bCount };
-                pBL = { x: sumBL_x / lCount, y: sumBL_y / lCount };
-            } else {
-                // フォールバック：大まかな長方形領域
-                let l = w * 0.2, r = w * 0.8, t = h * 0.15, b = h * 0.85;
-                pTL = { x: l, y: t }; pTR = { x: r, y: t };
-                pBR = { x: r, y: b }; pBL = { x: l, y: b };
+            // 角の1ピクセルのギザギザに引っ張られないよう、各角の極値トップ付近の座標を取得
+            const tol = 0.045;
+            let tlX = 0, tlY = 0, tlC = 0;
+            let trX = 0, trY = 0, trC = 0;
+            let brX = 0, brY = 0, brC = 0;
+            let blX = 0, blY = 0, blC = 0;
+
+            for (let i = 0; i < pixels.length; i++) {
+                const p = pixels[i];
+                const py = Math.floor(p / w);
+                const px = p - py * w;
+
+                const nx = (px - cx) / spanX;
+                const ny = (py - cy) / spanY;
+
+                if (-nx - ny >= maxTL - tol) { tlX += px; tlY += py; tlC++; }
+                if (+nx - ny >= maxTR - tol) { trX += px; trY += py; trC++; }
+                if (+nx + ny >= maxBR - tol) { brX += px; brY += py; brC++; }
+                if (-nx + ny >= maxBL - tol) { blX += px; blY += py; blC++; }
             }
 
-            return [
-                { x: pTL.x / w, y: pTL.y / h }, // 左上
-                { x: pTR.x / w, y: pTR.y / h }, // 右上
-                { x: pBR.x / w, y: pBR.y / h }, // 右下
-                { x: pBL.x / w, y: pBL.y / h }  // 左下
+            if (!tlC || !trC || !brC || !blC) return null;
+
+            const corners = [
+                { x: (tlX / tlC) / w, y: (tlY / tlC) / h }, // 左上 (TL)
+                { x: (trX / trC) / w, y: (trY / trC) / h }, // 右上 (TR)
+                { x: (brX / brC) / w, y: (brY / brC) / h }, // 右下 (BR)
+                { x: (blX / blC) / w, y: (blY / blC) / h }  // 左下 (BL)
             ];
+
+            // 四角形が潰れていないか最終検証
+            const topEdge = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+            const bottomEdge = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
+            const leftEdge = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
+            const rightEdge = Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y);
+
+            if (topEdge < 0.12 || bottomEdge < 0.12 || leftEdge < 0.12 || rightEdge < 0.12) {
+                return null;
+            }
+
+            return corners;
         }
 
         function takeSnapshot() {
@@ -618,12 +783,24 @@
             srcCanvas.width = vw; srcCanvas.height = vh;
             srcCanvas.getContext('2d').drawImage(video, 0, 0, vw, vh);
 
-            let normCorners = smoothedCorners || [{x:0.2,y:0.1},{x:0.8,y:0.1},{x:0.8,y:0.9},{x:0.2,y:0.9}];
-            const srcPts = normCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
+            // シャッターを押した瞬間にまだ四隅がロックされていない場合はその場で再検出を試みる
+            let normCorners = smoothedCorners;
+            if (!normCorners) {
+                const sw = 180, sh = Math.round((vh / vw) * sw);
+                workCanvas.width = sw; workCanvas.height = sh;
+                workCtx.drawImage(srcCanvas, 0, 0, sw, sh);
+                normCorners = detectReceiptBlobAndCorners(workCtx, sw, sh) || [
+                    { x: 0.15, y: 0.12 },
+                    { x: 0.85, y: 0.12 },
+                    { x: 0.85, y: 0.88 },
+                    { x: 0.15, y: 0.88 }
+                ];
+            }
 
+            const srcPts = normCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
             closeLiveCamera();
 
-            // 検出された「台形の四隅」に沿って正確に射影変換（台形補正）して切り抜き
+            // 青く囲まれた四隅だけを横幅100%いっぱいの真っ直ぐな長方形に台形補正して切り抜く
             const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
             if (isMobileRemote) {
                 if (activeConnection && activeConnection.open) {
@@ -652,7 +829,7 @@
             const avgH = Math.max(100, (leftH + rightH) / 2);
 
             const outW = 640;
-            const aspect = Math.min(3.5, Math.max(0.5, avgH / avgW));
+            const aspect = Math.min(3.5, Math.max(0.45, avgH / avgW));
             const outH = Math.round(outW * aspect);
 
             const dstPts = [
@@ -762,7 +939,7 @@
             if (!container) return;
 
             if (receiptImages.length === 0) {
-                container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">撮影したレシートがここにストックされます</p>`;
+                container.innerHTML = `<p class="col-span-full text-center text-xs text-slate-500 py-14">スマホまたはPCで撮影すると、ここに真っ直ぐなレシートがストックされます</p>`;
                 const btn = document.getElementById('analyzeBtn');
                 if (btn) {
                     btn.disabled = true;
@@ -776,7 +953,7 @@
                         <img src="${img}" class="w-full h-auto block">
                     </div>
                     <div class="bg-slate-950 px-3 py-2 flex justify-between items-center border-t border-slate-800">
-                        <span class="text-xs font-semibold text-cyan-400">#${idx+1} ストック中</span>
+                        <span class="text-xs font-semibold text-cyan-400">#${idx+1} 台形補正・最大化済</span>
                         <button onclick="removeImage(${idx})" class="bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg px-2.5 py-1 text-xs font-bold transition">削除</button>
                     </div>
                 </div>
@@ -791,9 +968,6 @@
         function removeImage(idx) { receiptImages.splice(idx, 1); updateThumbnailUI(); }
         function clearImages() { receiptImages = []; updateThumbnailUI(); }
 
-        // =========================================================================
-        // 【一括解析システム（自動リトライ ＆ 安全ウェイト付き）】
-        // =========================================================================
         async function analyzeReceipts() {
             if (receiptImages.length === 0) return;
             const loadingModal = document.getElementById('loadingModal');
@@ -954,13 +1128,13 @@
                 const cells = tableColumns.map(col => {
                     const val = item[col.key] ?? '';
                     if (col.key === 'total' || col.key === 'tax') {
-                        return `<td class="p-4 font-semibold text-emerald-400">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2 py-1 rounded-lg outline-none transition inline-block">${Number(val||0).toLocaleString()}</span></td>`;
+                        return `<td class="p-3 font-semibold text-emerald-400">¥<span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2 py-1 rounded-lg outline-none transition inline-block min-w-[60px]">${Number(val||0).toLocaleString()}</span></td>`;
                     }
-                    return `<td class="p-4 text-slate-200"><span contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 px-2 py-1 rounded-lg outline-none transition inline-block w-full">${val}</span></td>`;
+                    return `<td class="p-3 text-slate-200"><div contenteditable="true" onblur="updateCellValue(${rowIdx}, '${col.key}', this.innerText)" class="focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 hover:bg-slate-800/50 border border-transparent hover:border-slate-700 px-2.5 py-1.5 rounded-lg outline-none transition min-w-[90px] min-h-[32px] cursor-text">${val}</div></td>`;
                 }).join('');
                 return `<tr class="hover:bg-slate-900/60 transition group">
                     ${cells}
-                    <td class="p-4 text-center">
+                    <td class="p-3 text-center">
                         <button onclick="deleteRow(${rowIdx})" class="text-slate-500 hover:text-rose-400 transition p-2 rounded-lg hover:bg-rose-950/30"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>`;
@@ -987,9 +1161,6 @@
                 receiptsData[rowIdx][key] = text.trim();
             }
         }
-        (function() {
-            // keep helper for safety
-        })();
 
         function deleteRow(idx) { receiptsData.splice(idx, 1); renderTable(); }
 
