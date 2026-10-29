@@ -36,12 +36,7 @@
                         <p id="mobileConnStatus" class="text-xs text-amber-400 font-bold mt-0.5">🔄 PCへ接続しています...</p>
                     </div>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <button onclick="manualReconnectMobile()" class="bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 px-2.5 py-1 rounded-lg text-[11px] font-bold active:scale-95 transition">
-                        <i class="fa-solid fa-rotate"></i> 再接続
-                    </button>
-                    <span id="mobileSentCount" class="bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
-                </div>
+                <span id="mobileSentCount" class="bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
             </div>
 
             <!-- 撮影モード切替（通常 / 長尺） -->
@@ -63,7 +58,7 @@
                         <span id="mobileLongPendingText">現在の長尺レシート: 1枚撮影済</span>
                     </span>
                 </div>
-                <p class="text-[11px] text-amber-200/80">1つの長いレシートを撮り終えたら下のボタンを押して区切ってください。その後またカメラを起動して次の撮影ができます。</p>
+                <p class="text-[11px] text-amber-200/80">1つの長いレシートを撮り終えたら下のボタンを押して区切ってください。</p>
                 <button onclick="finishLongReceiptGroup()" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold rounded-xl text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center space-x-2">
                     <i class="fa-solid fa-circle-check text-base"></i>
                     <span>この長尺レシートを完了 (次のレシートへ)</span>
@@ -77,7 +72,7 @@
             </button>
 
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-                <p class="text-xs font-semibold text-slate-400">直前に撮影したレシート確認</p>
+                <p class="text-xs font-semibold text-slate-400">直前にPCへ転送したレシート確認</p>
                 <div id="mobileLastPreview" class="bg-black/60 rounded-xl min-h-[140px] max-h-52 overflow-y-auto flex items-center justify-center p-2 border border-slate-800">
                     <p class="text-xs text-slate-500">まだ撮影されていません</p>
                 </div>
@@ -96,7 +91,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.2</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.3</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -209,7 +204,7 @@
         </main>
     </div>
 
-    <!-- 📷 カメラモーダル（映像上に邪魔な文字を出さず、完了ボタンは上部に分離） -->
+    <!-- 📷 カメラモーダル -->
     <div id="cameraModal" class="hidden fixed inset-0 bg-black z-50 flex flex-col justify-between">
         <div class="flex justify-between items-center text-white z-20 bg-black/85 px-3 py-3 backdrop-blur gap-2">
             <div class="flex items-center space-x-2">
@@ -286,8 +281,6 @@
         let receiptItems = [];
         let currentLongGroupId = null;
         let currentLongGroupCount = 0;
-        let outgoingQueue = [];
-        let receivedPacketIds = new Set();
 
         let receiptsData = [];
         let videoStream = null;
@@ -309,19 +302,9 @@
         ];
         let draggedColIndex = null;
 
-        // 複数のSTUNサーバーを設定してスマホ・PC間のNAT越え開通率を最大化
-        const PEER_ICE_CONFIG = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' }
-            ]
-        };
-
         function generateSecureRoomId() {
-            return 'rcpt-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 10);
+            if (window.crypto && window.crypto.randomUUID) return 'rcpt-' + window.crypto.randomUUID();
+            return 'rcpt-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 12);
         }
 
         let peer = null;
@@ -329,7 +312,6 @@
         let isMobileRemote = false;
         let roomId = generateSecureRoomId();
         let mobileSentCounter = 0;
-        let mobileConnectTimer = null;
 
         window.addEventListener('DOMContentLoaded', () => {
             const params = new URLSearchParams(window.location.search);
@@ -447,194 +429,58 @@
             updateThumbnailUI();
         }
 
-        // スマホ側からPCへ確実に送るパケットキュー処理
-        function sendImagePacketToPC(imageBase64, mode, groupId) {
-            const packetId = 'pkt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-            outgoingQueue.push({
-                type: 'NEW_RECEIPT_IMAGE',
-                packetId: packetId,
-                image: imageBase64,
-                mode: mode,
-                groupId: groupId
-            });
-            flushOutgoingQueue();
-        }
-
-        function flushOutgoingQueue() {
-            if (!activeConnection || !activeConnection.open) {
-                const statusEl = document.getElementById('mobileConnStatus');
-                if (statusEl && outgoingQueue.length > 0) {
-                    statusEl.textContent = `🔄 PCへ再接続して送信中 (残り${outgoingQueue.length}枚)...`;
-                    statusEl.className = "text-xs text-amber-400 font-bold mt-0.5";
-                }
-                return;
-            }
-            while (outgoingQueue.length > 0) {
-                const pkt = outgoingQueue.shift();
-                try {
-                    activeConnection.send(pkt);
-                    mobileSentCounter++;
-                    const sentCountEl = document.getElementById('mobileSentCount');
-                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
-                } catch (err) {
-                    outgoingQueue.unshift(pkt);
-                    break;
-                }
-            }
-        }
-
         // =========================================================================
-        // 【P2P通信・完全安定版】双方向ハンドシェイク ＆ 自動タイムアウト再接続
+        // 【3つ前の安定構造に完全に巻き戻したPeerJS接続】
         // =========================================================================
-        function markPCConnectedUI() {
-            const badge = document.getElementById('pcSyncBadge');
-            if (badge) {
-                badge.textContent = "✅ スマホカメラ接続中";
-                badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
-            }
-            const status = document.getElementById('qrModalStatus');
-            if (status) status.textContent = "✅ スマホと双方向接続が完了しました！";
-            setTimeout(() => {
-                closeQRCode();
-            }, 700);
-        }
-
         function initPCPeer() {
             if (typeof Peer === 'undefined') return;
-            if (peer) {
-                try { peer.destroy(); } catch (e) {}
-            }
-            peer = new Peer(roomId, { config: PEER_ICE_CONFIG });
-
+            peer = new Peer(roomId, {
+                config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+            });
             peer.on('connection', (conn) => {
                 activeConnection = conn;
-
-                // 実際にデータ通信チャネルが開通した時点で初めて接続完了にする（フライング防止）
-                conn.on('open', () => {
-                    markPCConnectedUI();
-                    try { conn.send({ type: 'HANDSHAKE_ACK' }); } catch (e) {}
-                });
+                const badge = document.getElementById('pcSyncBadge');
+                if (badge) {
+                    badge.textContent = "✅ スマホカメラ接続中";
+                    badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
+                }
+                const status = document.getElementById('qrModalStatus');
+                if (status) status.textContent = "✅ スマホと接続完了！";
+                setTimeout(closeQRCode, 600);
 
                 conn.on('data', (data) => {
-                    if (!data) return;
-                    markPCConnectedUI();
-
-                    if (data.type === 'HANDSHAKE_SYN') {
-                        try { conn.send({ type: 'HANDSHAKE_ACK' }); } catch (e) {}
-                        return;
-                    }
-
-                    if (data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
-                        if (data.packetId && receivedPacketIds.has(data.packetId)) return;
-                        if (data.packetId) receivedPacketIds.add(data.packetId);
+                    if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
                         addReceivedImageToStock(data.image, data.mode || 'normal', data.groupId || null);
-                        try { conn.send({ type: 'IMAGE_RECEIVED_ACK', packetId: data.packetId }); } catch (e) {}
-                    }
-                });
-
-                conn.on('close', () => {
-                    const badge = document.getElementById('pcSyncBadge');
-                    if (badge) {
-                        badge.textContent = "⚠️ スマホ切断 (再接続待ち)";
-                        badge.className = "text-xs text-amber-400 bg-amber-950 px-2.5 py-0.5 rounded-full border border-amber-700 font-bold";
                     }
                 });
             });
-
-            peer.on('disconnected', () => {
-                try { peer.reconnect(); } catch (e) {}
-            });
-        }
-
-        function manualReconnectMobile() {
-            if (roomId) initMobilePeer(roomId);
         }
 
         function initMobilePeer(targetRoomId) {
             const statusEl = document.getElementById('mobileConnStatus');
             if (typeof Peer === 'undefined') return;
 
-            function connectToPC() {
-                if (mobileConnectTimer) clearTimeout(mobileConnectTimer);
-                if (peer) {
-                    try { peer.destroy(); } catch (e) {}
-                    peer = null;
-                }
-                activeConnection = null;
-
-                if (statusEl) {
-                    statusEl.textContent = "🔄 PCへ接続しています...";
-                    statusEl.className = "text-xs text-amber-400 font-bold mt-0.5";
-                }
-
-                peer = new Peer({ config: PEER_ICE_CONFIG });
-
-                // 3.8秒以内に双方向開通しなければ自動的にリトライ（スタック防止）
-                mobileConnectTimer = setTimeout(() => {
-                    if (!activeConnection || !activeConnection.open) {
-                        connectToPC();
-                    }
-                }, 3800);
-
+            function connect() {
+                peer = new Peer({ config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] } });
                 peer.on('open', () => {
-                    const conn = peer.connect(targetRoomId, {
-                        reliable: true,
-                        serialization: 'json'
-                    });
-
-                    function onChannelReady() {
-                        if (mobileConnectTimer) {
-                            clearTimeout(mobileConnectTimer);
-                            mobileConnectTimer = null;
-                        }
+                    const conn = peer.connect(targetRoomId, { reliable: true });
+                    conn.on('open', () => {
                         activeConnection = conn;
                         if (statusEl) {
                             statusEl.textContent = "✅ PCと接続完了！";
-                            statusEl.className = "text-xs text-emerald-400 font-extrabold mt-0.5";
-                        }
-                        flushOutgoingQueue();
-                    }
-
-                    conn.on('open', () => {
-                        onChannelReady();
-                        try { conn.send({ type: 'HANDSHAKE_SYN' }); } catch (e) {}
-                    });
-
-                    conn.on('data', (data) => {
-                        if (data && (data.type === 'HANDSHAKE_ACK' || data.type === 'IMAGE_RECEIVED_ACK')) {
-                            onChannelReady();
+                            statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
                         }
                     });
-
                     conn.on('close', () => {
-                        activeConnection = null;
                         if (statusEl) {
-                            statusEl.textContent = "🔄 接続が切れました。再接続中...";
+                            statusEl.textContent = "⚠️ 接続が切れました。再接続中...";
                             statusEl.className = "text-xs text-amber-400 font-bold mt-0.5";
                         }
-                        setTimeout(connectToPC, 1500);
+                        setTimeout(connect, 3000);
                     });
-
-                    conn.on('error', () => {
-                        setTimeout(connectToPC, 1500);
-                    });
-                });
-
-                peer.on('error', () => {
-                    setTimeout(connectToPC, 2000);
                 });
             }
-
-            connectToPC();
-
-            // スマホのスリープ復帰時や画面復帰時に切れていたら自動で繋ぎ直す
-            document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible') {
-                    if (!activeConnection || !activeConnection.open) {
-                        connectToPC();
-                    }
-                }
-            });
+            connect();
         }
 
         function showQRCode() {
@@ -757,7 +603,6 @@
                     }
                     if (tip) tip.textContent = quality.tipText;
 
-                    // 1. 四隅を結ぶ台形・多角形の描画
                     ctx.beginPath();
                     ctx.moveTo(pts[0].x, pts[0].y);
                     ctx.lineTo(pts[1].x, pts[1].y);
@@ -771,7 +616,6 @@
                     ctx.lineJoin = "round";
                     ctx.stroke();
 
-                    // 2. 四隅の角マーカー（丸いドット）を描画
                     const radius = Math.max(8, Math.round(vw * 0.012));
                     for (let i = 0; i < 4; i++) {
                         ctx.beginPath();
@@ -1031,6 +875,7 @@
             return corners;
         }
 
+        // シャッター撮影処理（シンプル直結の通常・長尺転送）
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
             if (!video) return;
@@ -1063,7 +908,17 @@
                 updateLongProgressUI();
 
                 if (isMobileRemote) {
-                    sendImagePacketToPC(flattened, 'long', currentLongGroupId);
+                    if (activeConnection && activeConnection.open) {
+                        activeConnection.send({
+                            type: 'NEW_RECEIPT_IMAGE',
+                            image: flattened,
+                            mode: 'long',
+                            groupId: currentLongGroupId
+                        });
+                        mobileSentCounter++;
+                        const sentCountEl = document.getElementById('mobileSentCount');
+                        if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
+                    }
                     const previewEl = document.getElementById('mobileLastPreview');
                     if (previewEl) {
                         previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-amber-500/50">`;
@@ -1077,7 +932,17 @@
             closeLiveCamera();
 
             if (isMobileRemote) {
-                sendImagePacketToPC(flattened, 'normal', null);
+                if (activeConnection && activeConnection.open) {
+                    activeConnection.send({
+                        type: 'NEW_RECEIPT_IMAGE',
+                        image: flattened,
+                        mode: 'normal',
+                        groupId: null
+                    });
+                    mobileSentCounter++;
+                    const sentCountEl = document.getElementById('mobileSentCount');
+                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
+                }
                 const previewEl = document.getElementById('mobileLastPreview');
                 if (previewEl) {
                     previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
