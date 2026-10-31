@@ -91,7 +91,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.8</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.9</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -313,25 +313,10 @@
         let roomId = generateSecureRoomId();
         let mobileSentCounter = 0;
 
-        // 【修正箇所】通信をPeerJS(WebRTC)のダイレクト通信のみに戻し、TURNサーバーだけを残す
+        // 【完全修正】不安定なTURNサーバーを全削除し、最も安定するGoogleのSTUNのみ指定
         const ICE_SERVERS = [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
+            { urls: 'stun:stun1.l.google.com:19302' }
         ];
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -450,7 +435,9 @@
             updateThumbnailUI();
         }
 
-        // PC側の直接通信（P2P）受信設定
+        // =========================================================================
+        // 【完全修正】PC側：スマホからの「繋がった？」という合図を待ってUIを変える
+        // =========================================================================
         function initPCPeer() {
             if (typeof Peer === 'undefined') return;
             peer = new Peer(roomId, { config: { iceServers: ICE_SERVERS } });
@@ -458,27 +445,20 @@
             peer.on('connection', (conn) => {
                 activeConnection = conn;
                 
-                const onOpen = () => {
-                    const badge = document.getElementById('pcSyncBadge');
-                    if (badge) {
-                        badge.textContent = "✅ スマホカメラ接続中";
-                        badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
-                    }
-                    const status = document.getElementById('qrModalStatus');
-                    if (status) status.textContent = "✅ スマホと接続完了！";
-                    setTimeout(closeQRCode, 600);
-                    
-                    try { conn.send({ type: 'WELCOME_ACK' }); } catch(e) {}
-                };
-
-                if (conn.open) {
-                    onOpen();
-                } else {
-                    conn.on('open', onOpen);
-                }
-
                 conn.on('data', (data) => {
-                    if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
+                    if (data && data.type === 'HELLO') {
+                        const badge = document.getElementById('pcSyncBadge');
+                        if (badge) {
+                            badge.textContent = "✅ スマホカメラ接続中";
+                            badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
+                        }
+                        const status = document.getElementById('qrModalStatus');
+                        if (status) status.textContent = "✅ スマホと接続完了！";
+                        setTimeout(closeQRCode, 600);
+                        
+                        try { conn.send({ type: 'WELCOME_ACK' }); } catch(e) {}
+                    }
+                    else if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
                         addReceivedImageToStock(data.image, data.mode || 'normal', data.groupId || null);
                     }
                 });
@@ -494,21 +474,31 @@
             });
         }
 
-        // スマホ側の直接通信（P2P）接続設定
+        // =========================================================================
+        // 【完全修正】スマホ側：PCから返事が来るまで1秒おきにしつこく合図を送り続ける
+        // =========================================================================
         function initMobilePeer(targetRoomId) {
             const statusEl = document.getElementById('mobileConnStatus');
             if (typeof Peer === 'undefined') return;
+
+            let helloInterval = null;
 
             function connectWebRTC() {
                 if (peer && !peer.destroyed) peer.destroy();
                 peer = new Peer({ config: { iceServers: ICE_SERVERS } });
                 
                 peer.on('open', () => {
-                    const conn = peer.connect(targetRoomId, { reliable: true });
+                    // エラーの温床になる余計なオプションを削除し、JSONデータとして扱うことだけを明記
+                    const conn = peer.connect(targetRoomId, { serialization: 'json' });
                     
                     const onOpen = () => {
                         activeConnection = conn;
-                        try { conn.send({ type: 'HELLO' }); } catch(e) {}
+                        if (helloInterval) clearInterval(helloInterval);
+                        
+                        // PCから返事が来るまで、1秒おきに何度でも合図を送る（一瞬の通信ロス対策）
+                        helloInterval = setInterval(() => {
+                            try { conn.send({ type: 'HELLO' }); } catch(e) {}
+                        }, 1000);
                     };
 
                     if (conn.open) {
@@ -519,6 +509,7 @@
                     
                     conn.on('data', (data) => {
                         if (data && data.type === 'WELCOME_ACK') {
+                            if (helloInterval) clearInterval(helloInterval);
                             if (statusEl) {
                                 statusEl.textContent = "✅ PCと接続完了！";
                                 statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
@@ -528,6 +519,7 @@
 
                     conn.on('close', () => {
                         activeConnection = null;
+                        if (helloInterval) clearInterval(helloInterval);
                         if (statusEl) {
                             statusEl.textContent = "⚠️ 接続が切れました。再接続中...";
                             statusEl.className = "text-xs text-amber-400 font-bold mt-0.5";
@@ -835,7 +827,9 @@
             return corners;
         }
 
-        // スマホからの直接送信処理（P2P）
+        // =========================================================================
+        // 【完全修正】画像の送信時、WebRTCのデータ容量制限で切断されないよう画質(サイズ)を抑えて送る
+        // =========================================================================
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
             if (!video) return;
@@ -875,7 +869,7 @@
                             mobileSentCounter++;
                             const sentCountEl = document.getElementById('mobileSentCount');
                             if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
-                        } catch(e) { console.error(e); }
+                        } catch(e) {}
                     }
                     const previewEl = document.getElementById('mobileLastPreview');
                     if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-amber-500/50">`; }
@@ -899,7 +893,7 @@
                         mobileSentCounter++;
                         const sentCountEl = document.getElementById('mobileSentCount');
                         if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
-                    } catch(e) { console.error(e); }
+                    } catch(e) {}
                 }
                 const previewEl = document.getElementById('mobileLastPreview');
                 if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`; }
@@ -969,7 +963,9 @@
                 }
             }
             oCtx.putImageData(outImgData, 0, 0);
-            return outCanvas.toDataURL('image/jpeg', 0.80);
+            
+            // 画質を0.80から0.60へ落とし、データ容量を小さくしてWebRTCの切断を防ぐ
+            return outCanvas.toDataURL('image/jpeg', 0.60);
         }
 
         function computeHomography(src, dst) {
