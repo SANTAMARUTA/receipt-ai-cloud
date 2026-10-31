@@ -92,7 +92,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.5</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.6</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -457,7 +457,7 @@
         }
 
         function getMqttTopic(targetRoom) {
-            return 'receipt-ai-cloud-v25/' + targetRoom;
+            return 'receipt-ai-cloud-v26/' + targetRoom;
         }
 
         function markPCConnected() {
@@ -880,15 +880,10 @@
 
             const distortion = Math.max(wDiff, hDiff, dDiff * 0.85);
 
-            if (distortion < 0.08) {
-                return { badgeText: "🟢 最高精度 (真上・フラット)", badgeClass: "bg-emerald-400 text-slate-950 font-extrabold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "完璧な角度です！このままシャッターを押してください", strokeColor: "#3b82f6", fillColor: "rgba(59, 130, 246, 0.28)", cornerColor: "#60a5fa" };
-            } else if (distortion < 0.16) {
-                return { badgeText: "🔵 高精度 (良好)", badgeClass: "bg-blue-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "良好です。シャッターを押すと自動で真っ直ぐ補正されます", strokeColor: "#3b82f6", fillColor: "rgba(59, 130, 246, 0.25)", cornerColor: "#60a5fa" };
-            } else if (distortion < 0.28) {
-                return { badgeText: "🟠 中精度 (やや斜め)", badgeClass: "bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "少し斜めです。真上から撮るとより文字がくっきり読めます", strokeColor: "#f59e0b", fillColor: "rgba(245, 158, 11, 0.24)", cornerColor: "#fbbf24" };
-            } else {
-                return { badgeText: "🔴 低精度 (傾き大)", badgeClass: "bg-rose-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "斜めに歪んでいます。カメラをレシートの真上へ移動させてください", strokeColor: "#f43f5e", fillColor: "rgba(244, 63, 94, 0.24)", cornerColor: "#fb7185" };
-            }
+            if (distortion < 0.08) { return { badgeText: "🟢 最高精度 (真上・フラット)", badgeClass: "bg-emerald-400 text-slate-950 font-extrabold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "完璧な角度です！このままシャッターを押してください", strokeColor: "#3b82f6", fillColor: "rgba(59, 130, 246, 0.28)", cornerColor: "#60a5fa" }; }
+            else if (distortion < 0.16) { return { badgeText: "🔵 高精度 (良好)", badgeClass: "bg-blue-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "良好です。シャッターを押すと自動で真っ直ぐ補正されます", strokeColor: "#3b82f6", fillColor: "rgba(59, 130, 246, 0.25)", cornerColor: "#60a5fa" }; }
+            else if (distortion < 0.28) { return { badgeText: "🟠 中精度 (やや斜め)", badgeClass: "bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "少し斜めです。真上から撮るとより文字がくっきり読めます", strokeColor: "#f59e0b", fillColor: "rgba(245, 158, 11, 0.24)", cornerColor: "#fbbf24" }; }
+            else { return { badgeText: "🔴 低精度 (傾き大)", badgeClass: "bg-rose-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "斜めに歪んでいます。カメラをレシートの真上へ移動させてください", strokeColor: "#f43f5e", fillColor: "rgba(244, 63, 94, 0.24)", cornerColor: "#fb7185" }; }
         }
 
         function detectReceiptBlobAndCorners(ctx, w, h) {
@@ -1202,7 +1197,7 @@
         function clearImages() { receiptItems = []; updateThumbnailUI(); }
 
         // =========================================================================
-        // 【アップデート箇所】最大3枚の同時並列処理で待機時間を劇的に短縮する機能
+        // 【修正箇所】Vercel制限やAIのスパム判定を回避するため、並列処理に「ずらし」を入れる
         // =========================================================================
         async function analyzeReceipts() {
             if (currentLongGroupCount > 0) {
@@ -1228,8 +1223,8 @@
             if (progressCount) progressCount.textContent = `0 / ${total} 件完了`;
             if (loadingText) loadingText.textContent = "複数枚を同時にスピードデータ化しています...";
 
-            // 3枚同時に並列処理するワーカー（API制限を回避しつつ3倍速化）
-            const concurrencyLimit = 3;
+            // 同時処理数は最大2件に抑え、さらに送信タイミングを1.5秒ズラすことでAPIの制限を回避
+            const concurrencyLimit = 2;
             let currentIndex = 0;
 
             const runWorker = async () => {
@@ -1260,7 +1255,8 @@
                             try {
                                 resJson = JSON.parse(rawText);
                             } catch (e) {
-                                throw new Error("応答解析エラー");
+                                // Vercelが強制終了してHTMLエラーを返してきた場合の処理
+                                throw new Error(`サーバーエラー: ${rawText.slice(0, 40)}...`);
                             }
 
                             if (!response.ok) throw new Error(resJson.error || '解析失敗');
@@ -1276,7 +1272,7 @@
                             if (attempts >= maxAttempts) {
                                 failedIndices.push(i);
                             } else {
-                                await new Promise(r => setTimeout(r, 600)); // リトライ前の短い待機
+                                await new Promise(r => setTimeout(r, 1000)); // 失敗時は1秒待って再試行
                             }
                         }
                     }
@@ -1287,15 +1283,16 @@
                     if (progressCount) progressCount.textContent = `${completed} / ${total} 件完了`;
                     if (loadingText) loadingText.textContent = `${completed}件目のデータ化が完了しました`;
                     
-                    // 解析が終わったものから随時画面のテーブルへ表示（リアルタイム反映）
                     renderTable();
                 }
             };
 
-            // ワーカーを上限まで同時起動して完了を待つ
             const workers = [];
             for (let w = 0; w < Math.min(concurrencyLimit, total); w++) {
-                workers.push(runWorker());
+                // 1件目と2件目で1.5秒の「時差」を作ってからワーカーを起動する
+                workers.push(
+                    new Promise(resolve => setTimeout(resolve, w * 1500)).then(() => runWorker())
+                );
             }
             await Promise.all(workers);
 
