@@ -92,7 +92,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.6</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.7</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -269,7 +269,7 @@
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 z-50 space-y-6">
         <div class="animate-spin rounded-full h-20 w-20 border-4 border-cyan-400 border-t-transparent shadow-[0_0_35px_rgba(6,182,212,0.5)]"></div>
         <div class="text-center space-y-3 max-w-sm w-full bg-slate-900/90 border border-slate-800 p-6 rounded-3xl shadow-2xl">
-            <p class="text-xl font-bold text-cyan-300" id="loadingTitle">AI並列解析中...</p>
+            <p class="text-xl font-bold text-cyan-300" id="loadingTitle">高速AI解析を実行中...</p>
             <p class="text-xs text-slate-300" id="loadingText">準備中...</p>
             <div class="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800">
                 <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full transition-all duration-300 w-0"></div>
@@ -457,7 +457,7 @@
         }
 
         function getMqttTopic(targetRoom) {
-            return 'receipt-ai-cloud-v26/' + targetRoom;
+            return 'receipt-ai-cloud-v27/' + targetRoom;
         }
 
         function markPCConnected() {
@@ -1197,7 +1197,7 @@
         function clearImages() { receiptItems = []; updateThumbnailUI(); }
 
         // =========================================================================
-        // 【修正箇所】Vercel制限やAIのスパム判定を回避するため、並列処理に「ずらし」を入れる
+        // 【完全修正】APIのスパム制限に絶対に引っかからない「完全な順番待ち（直列処理）」へ巻き戻し
         // =========================================================================
         async function analyzeReceipts() {
             if (currentLongGroupCount > 0) {
@@ -1218,83 +1218,74 @@
             let failedIndices = [];
             let completed = 0;
 
-            if (loadingTitle) loadingTitle.textContent = "AI並列解析を実行中...";
+            if (loadingTitle) loadingTitle.textContent = "AI高速解析を実行中...";
             if (progressBar) progressBar.style.width = `0%`;
             if (progressCount) progressCount.textContent = `0 / ${total} 件完了`;
-            if (loadingText) loadingText.textContent = "複数枚を同時にスピードデータ化しています...";
 
-            // 同時処理数は最大2件に抑え、さらに送信タイミングを1.5秒ズラすことでAPIの制限を回避
-            const concurrencyLimit = 2;
-            let currentIndex = 0;
+            // 1件ずつ完全に終わらせることで、無料枠の「同時リクエスト制限」を確実に回避する
+            for (let i = 0; i < total; i++) {
+                const item = workingItems[i];
+                const isLongSet = item.images.length > 1 || item.mode === 'long';
 
-            const runWorker = async () => {
-                while (currentIndex < total) {
-                    const i = currentIndex++;
-                    const item = workingItems[i];
-                    const isLongSet = item.images.length > 1 || item.mode === 'long';
+                if (loadingText) loadingText.textContent = `${i + 1}件目をスピードデータ化しています...`;
 
-                    let success = false;
-                    let attempts = 0;
-                    const maxAttempts = 2;
+                let success = false;
+                let attempts = 0;
+                const maxAttempts = 2;
 
-                    while (!success && attempts < maxAttempts) {
-                        attempts++;
+                while (!success && attempts < maxAttempts) {
+                    attempts++;
+                    try {
+                        const response = await fetch('/api/analyze', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                images: item.images,
+                                image: item.images[0],
+                                mode: isLongSet ? 'long' : 'normal'
+                            })
+                        });
+                        
+                        const rawText = await response.text();
+                        let resJson;
                         try {
-                            const response = await fetch('/api/analyze', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    images: item.images,
-                                    image: item.images[0],
-                                    mode: isLongSet ? 'long' : 'normal'
-                                })
-                            });
-                            
-                            const rawText = await response.text();
-                            let resJson;
-                            try {
-                                resJson = JSON.parse(rawText);
-                            } catch (e) {
-                                // Vercelが強制終了してHTMLエラーを返してきた場合の処理
-                                throw new Error(`サーバーエラー: ${rawText.slice(0, 40)}...`);
-                            }
+                            resJson = JSON.parse(rawText);
+                        } catch (e) {
+                            throw new Error(`サーバーエラー: ${rawText.slice(0, 40)}...`);
+                        }
 
-                            if (!response.ok) throw new Error(resJson.error || '解析失敗');
+                        if (!response.ok) throw new Error(resJson.error || '解析失敗');
 
-                            const rows = Array.isArray(resJson) ? resJson : [resJson];
-                            rows.forEach(r => {
-                                if (!Array.isArray(r.uncertain)) r.uncertain = [];
-                                receiptsData.unshift(r);
-                            });
-                            success = true;
-                        } catch (err) {
-                            console.warn(`${i + 1}件目 試行 ${attempts}回目失敗:`, err.message);
-                            if (attempts >= maxAttempts) {
-                                failedIndices.push(i);
-                            } else {
-                                await new Promise(r => setTimeout(r, 1000)); // 失敗時は1秒待って再試行
-                            }
+                        const rows = Array.isArray(resJson) ? resJson : [resJson];
+                        rows.forEach(r => {
+                            if (!Array.isArray(r.uncertain)) r.uncertain = [];
+                            receiptsData.unshift(r);
+                        });
+                        success = true;
+                    } catch (err) {
+                        console.warn(`${i + 1}件目 試行 ${attempts}回目失敗:`, err.message);
+                        if (attempts >= maxAttempts) {
+                            failedIndices.push(i);
+                        } else {
+                            if (loadingText) loadingText.textContent = `混雑のため ${i + 1}件目を再試行中...`;
+                            await new Promise(r => setTimeout(r, 2000)); // 再試行時は確実に2秒待つ
                         }
                     }
-
-                    completed++;
-                    const percent = Math.round((completed / total) * 100);
-                    if (progressBar) progressBar.style.width = `${percent}%`;
-                    if (progressCount) progressCount.textContent = `${completed} / ${total} 件完了`;
-                    if (loadingText) loadingText.textContent = `${completed}件目のデータ化が完了しました`;
-                    
-                    renderTable();
                 }
-            };
 
-            const workers = [];
-            for (let w = 0; w < Math.min(concurrencyLimit, total); w++) {
-                // 1件目と2件目で1.5秒の「時差」を作ってからワーカーを起動する
-                workers.push(
-                    new Promise(resolve => setTimeout(resolve, w * 1500)).then(() => runWorker())
-                );
+                completed++;
+                const percent = Math.round((completed / total) * 100);
+                if (progressBar) progressBar.style.width = `${percent}%`;
+                if (progressCount) progressCount.textContent = `${completed} / ${total} 件完了`;
+                
+                // 1件終わるごとに画面のテーブルに即時反映させる
+                renderTable();
+
+                // 次の画像へ行く前に、スパム制限回避のためのクールダウンタイム（1秒）を挟む
+                if (i < total - 1) {
+                    await new Promise(r => setTimeout(r, 1000));
+                }
             }
-            await Promise.all(workers);
 
             if (loadingTitle) loadingTitle.textContent = "すべての解析が完了しました！";
             if (loadingText) loadingText.textContent = "赤枠・黄枠の項目がある場合はクリックしてご確認ください。";

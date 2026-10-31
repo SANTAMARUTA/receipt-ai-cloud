@@ -1,3 +1,6 @@
+// Vercelホスティングのタイムアウト(通常10秒)を回避し、最大60秒まで待機可能にする設定
+export const maxDuration = 60;
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -25,8 +28,8 @@ export default async function handler(req, res) {
             }
         }
 
-        // 無駄なリトライを省き、最速かつ高精度なモデルのみを直接指定
-        const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash"];
+        // 存在しないモデルの探索によるタイムロスをなくし、最速で安定したモデル一発でリクエストする
+        const modelsToTry = ["gemini-1.5-flash"];
         let data = null;
         let lastError = null;
 
@@ -57,7 +60,7 @@ export default async function handler(req, res) {
         }
 
         if (!data) {
-            throw new Error(`AIサーバー混雑 (${lastError})`);
+            throw new Error(`AIサーバーエラー (${lastError})`);
         }
 
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
