@@ -48,16 +48,9 @@ export default async function handler(req) {
   },status>=500?503:status);
  };
  try {
-  let model = (process.env.GEMINI_MODEL || '').trim().replace(/^models\//,'');
-  if (!model) {
-   const res = await fetch(`${API}/models?pageSize=1000`,{headers,signal:controller.signal});
-   if(!res.ok) return await fail(res, 'models.list');
-   const data = await res.json();
-   const models = (data.models || []).filter(m=>/^models\/gemini-.*flash/.test(m.name) && !/image|audio|tts|live|preview|exp|robotics/.test(m.name) && m.supportedGenerationMethods?.includes('generateContent'));
-   models.sort((a,b)=>b.name.localeCompare(a.name,undefined,{numeric:true}));
-   model = models[0]?.name.replace(/^models\//,'');
-   if(!model) return json({error:'利用可能なモデルがありません。GEMINI_MODELに画像対応モデル名を設定してください。'},503);
-  }
+  // Stable default verified for this project's displayed free-tier model.
+  // Never choose an unrelated model merely because its name sorts last.
+  const model = (process.env.GEMINI_MODEL || 'gemini-3.6-flash').trim().replace(/^models\//,'');
   if(!/^[a-zA-Z0-9._-]+$/.test(model)) return json({error:'GEMINI_MODELの値が不正です。'},503);
   selectedModel = model;
   const properties = Object.fromEntries(fields.map(k=>[k,{type:k==='total'||k==='tax'?'NUMBER':'STRING'}]));
