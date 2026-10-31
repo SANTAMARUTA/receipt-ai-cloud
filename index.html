@@ -91,7 +91,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.9</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v3.0</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -313,10 +313,10 @@
         let roomId = generateSecureRoomId();
         let mobileSentCounter = 0;
 
-        // 【完全修正】不安定なTURNサーバーを全削除し、最も安定するGoogleのSTUNのみ指定
         const ICE_SERVERS = [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
         ];
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -436,8 +436,42 @@
         }
 
         // =========================================================================
-        // 【完全修正】PC側：スマホからの「繋がった？」という合図を待ってUIを変える
+        // 【完全修正】チャンク（細切れ）データ送受信エンジン
+        // WebRTCの送信上限（64KB）を超過しないよう、画像を16KBの小包に分けて送信しPCで結合する
         // =========================================================================
+        let chunkBuffers = {};
+        let helloInterval = null;
+
+        function handleFullData(data) {
+            if (data.type === 'HELLO') {
+                const badge = document.getElementById('pcSyncBadge');
+                if (badge) {
+                    badge.textContent = "✅ スマホカメラ接続中";
+                    badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
+                }
+                const status = document.getElementById('qrModalStatus');
+                if (status) status.textContent = "✅ スマホと接続完了！";
+                setTimeout(closeQRCode, 600);
+                
+                try { 
+                    if(activeConnection && activeConnection.open) {
+                        activeConnection.send(JSON.stringify({ type: 'WELCOME_ACK' }));
+                    }
+                } catch(e) {}
+            }
+            else if (data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
+                addReceivedImageToStock(data.image, data.mode || 'normal', data.groupId || null);
+            }
+            else if (data.type === 'WELCOME_ACK') {
+                if (helloInterval) clearInterval(helloInterval);
+                const statusEl = document.getElementById('mobileConnStatus');
+                if (statusEl) {
+                    statusEl.textContent = "✅ PCと接続完了！";
+                    statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
+                }
+            }
+        }
+
         function initPCPeer() {
             if (typeof Peer === 'undefined') return;
             peer = new Peer(roomId, { config: { iceServers: ICE_SERVERS } });
@@ -445,21 +479,28 @@
             peer.on('connection', (conn) => {
                 activeConnection = conn;
                 
-                conn.on('data', (data) => {
-                    if (data && data.type === 'HELLO') {
-                        const badge = document.getElementById('pcSyncBadge');
-                        if (badge) {
-                            badge.textContent = "✅ スマホカメラ接続中";
-                            badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
-                        }
-                        const status = document.getElementById('qrModalStatus');
-                        if (status) status.textContent = "✅ スマホと接続完了！";
-                        setTimeout(closeQRCode, 600);
+                conn.on('data', (rawData) => {
+                    let data;
+                    try {
+                        data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+                    } catch(e) { return; }
+                    
+                    if (data.type === 'CHUNK') {
+                        if (!chunkBuffers[data.msgId]) chunkBuffers[data.msgId] = new Array(data.total);
+                        chunkBuffers[data.msgId][data.index] = data.data;
                         
-                        try { conn.send({ type: 'WELCOME_ACK' }); } catch(e) {}
-                    }
-                    else if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
-                        addReceivedImageToStock(data.image, data.mode || 'normal', data.groupId || null);
+                        let isComplete = true;
+                        for (let i = 0; i < data.total; i++) {
+                            if (chunkBuffers[data.msgId][i] === undefined) { isComplete = false; break; }
+                        }
+                        
+                        if (isComplete) {
+                            const fullStr = chunkBuffers[data.msgId].join('');
+                            delete chunkBuffers[data.msgId];
+                            try { handleFullData(JSON.parse(fullStr)); } catch(e){}
+                        }
+                    } else {
+                        handleFullData(data);
                     }
                 });
                 
@@ -474,47 +515,34 @@
             });
         }
 
-        // =========================================================================
-        // 【完全修正】スマホ側：PCから返事が来るまで1秒おきにしつこく合図を送り続ける
-        // =========================================================================
         function initMobilePeer(targetRoomId) {
             const statusEl = document.getElementById('mobileConnStatus');
             if (typeof Peer === 'undefined') return;
-
-            let helloInterval = null;
 
             function connectWebRTC() {
                 if (peer && !peer.destroyed) peer.destroy();
                 peer = new Peer({ config: { iceServers: ICE_SERVERS } });
                 
                 peer.on('open', () => {
-                    // エラーの温床になる余計なオプションを削除し、JSONデータとして扱うことだけを明記
-                    const conn = peer.connect(targetRoomId, { serialization: 'json' });
+                    const conn = peer.connect(targetRoomId);
                     
                     const onOpen = () => {
                         activeConnection = conn;
                         if (helloInterval) clearInterval(helloInterval);
                         
-                        // PCから返事が来るまで、1秒おきに何度でも合図を送る（一瞬の通信ロス対策）
                         helloInterval = setInterval(() => {
-                            try { conn.send({ type: 'HELLO' }); } catch(e) {}
+                            try { conn.send(JSON.stringify({ type: 'HELLO' })); } catch(e) {}
                         }, 1000);
                     };
 
-                    if (conn.open) {
-                        onOpen();
-                    } else {
-                        conn.on('open', onOpen);
-                    }
+                    if (conn.open) { onOpen(); } else { conn.on('open', onOpen); }
                     
-                    conn.on('data', (data) => {
-                        if (data && data.type === 'WELCOME_ACK') {
-                            if (helloInterval) clearInterval(helloInterval);
-                            if (statusEl) {
-                                statusEl.textContent = "✅ PCと接続完了！";
-                                statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
-                            }
-                        }
+                    conn.on('data', (rawData) => {
+                        let data;
+                        try {
+                            data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+                        } catch(e) { return; }
+                        handleFullData(data);
                     });
 
                     conn.on('close', () => {
@@ -533,6 +561,28 @@
                 });
             }
             connectWebRTC();
+        }
+
+        // スマホ側：画像を小包（16KB）に分けて送る関数
+        function sendLargeData(payloadObj) {
+            if (!activeConnection || !activeConnection.open) return;
+            const jsonStr = JSON.stringify(payloadObj);
+            const chunkSize = 16 * 1024;
+            const totalChunks = Math.ceil(jsonStr.length / chunkSize);
+            const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+            
+            for (let i = 0; i < totalChunks; i++) {
+                const chunk = jsonStr.substring(i * chunkSize, (i + 1) * chunkSize);
+                try {
+                    activeConnection.send(JSON.stringify({
+                        type: 'CHUNK',
+                        msgId: msgId,
+                        index: i,
+                        total: totalChunks,
+                        data: chunk
+                    }));
+                } catch(e) {}
+            }
         }
 
         function showQRCode() {
@@ -827,9 +877,7 @@
             return corners;
         }
 
-        // =========================================================================
-        // 【完全修正】画像の送信時、WebRTCのデータ容量制限で切断されないよう画質(サイズ)を抑えて送る
-        // =========================================================================
+        // スマホ側：撮影時にチャンク分割送信エンジン（sendLargeData）を呼び出すよう修正
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
             if (!video) return;
@@ -858,19 +906,16 @@
                 updateLongProgressUI();
 
                 if (isMobileRemote) {
-                    if (activeConnection && activeConnection.open) {
-                        try {
-                            activeConnection.send({
-                                type: 'NEW_RECEIPT_IMAGE',
-                                image: flattened,
-                                mode: 'long',
-                                groupId: currentLongGroupId
-                            });
-                            mobileSentCounter++;
-                            const sentCountEl = document.getElementById('mobileSentCount');
-                            if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
-                        } catch(e) {}
-                    }
+                    sendLargeData({
+                        type: 'NEW_RECEIPT_IMAGE',
+                        image: flattened,
+                        mode: 'long',
+                        groupId: currentLongGroupId
+                    });
+                    mobileSentCounter++;
+                    const sentCountEl = document.getElementById('mobileSentCount');
+                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
+                    
                     const previewEl = document.getElementById('mobileLastPreview');
                     if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-amber-500/50">`; }
                 } else {
@@ -882,19 +927,16 @@
             closeLiveCamera();
 
             if (isMobileRemote) {
-                if (activeConnection && activeConnection.open) {
-                    try {
-                        activeConnection.send({
-                            type: 'NEW_RECEIPT_IMAGE',
-                            image: flattened,
-                            mode: 'normal',
-                            groupId: null
-                        });
-                        mobileSentCounter++;
-                        const sentCountEl = document.getElementById('mobileSentCount');
-                        if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
-                    } catch(e) {}
-                }
+                sendLargeData({
+                    type: 'NEW_RECEIPT_IMAGE',
+                    image: flattened,
+                    mode: 'normal',
+                    groupId: null
+                });
+                mobileSentCounter++;
+                const sentCountEl = document.getElementById('mobileSentCount');
+                if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
+                
                 const previewEl = document.getElementById('mobileLastPreview');
                 if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`; }
             } else {
@@ -964,7 +1006,7 @@
             }
             oCtx.putImageData(outImgData, 0, 0);
             
-            // 画質を0.80から0.60へ落とし、データ容量を小さくしてWebRTCの切断を防ぐ
+            // 【完全修正】通信がパンクしないよう、AI解析に影響のない範囲で画質を下げてサイズを圧縮
             return outCanvas.toDataURL('image/jpeg', 0.60);
         }
 
