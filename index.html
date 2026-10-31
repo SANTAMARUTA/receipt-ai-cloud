@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         tailwind.config = {
@@ -92,7 +91,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.7</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.8</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -310,19 +309,14 @@
 
         let peer = null;
         let activeConnection = null;
-        let mqttClient = null;
         let isMobileRemote = false;
-        let isPartnerConnected = false;
         let roomId = generateSecureRoomId();
         let mobileSentCounter = 0;
-        let processedMsgIds = new Set();
-        let pendingImageQueue = [];
-        let mobileHandshakeTimer = null;
 
+        // 【修正箇所】通信をPeerJS(WebRTC)のダイレクト通信のみに戻し、TURNサーバーだけを残す
         const ICE_SERVERS = [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
             {
                 urls: 'turn:openrelay.metered.ca:80',
                 username: 'openrelayproject',
@@ -456,262 +450,97 @@
             updateThumbnailUI();
         }
 
-        function getMqttTopic(targetRoom) {
-            return 'receipt-ai-cloud-v27/' + targetRoom;
-        }
-
-        function markPCConnected() {
-            isPartnerConnected = true;
-            const badge = document.getElementById('pcSyncBadge');
-            if (badge) {
-                badge.textContent = "✅ スマホカメラ接続中";
-                badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
-            }
-            const status = document.getElementById('qrModalStatus');
-            if (status) status.textContent = "✅ スマホと接続完了！";
-            setTimeout(closeQRCode, 500);
-        }
-
-        function markMobileConnected() {
-            isPartnerConnected = true;
-            const statusEl = document.getElementById('mobileConnStatus');
-            if (statusEl) {
-                statusEl.textContent = "✅ PCと接続完了！";
-                statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
-            }
-            flushPendingImages();
-        }
-
-        function sendSignalFromPCToMobile(payload) {
-            const jsonStr = JSON.stringify(payload);
-            if (activeConnection && activeConnection.open) {
-                try { activeConnection.send(payload); } catch (e) {}
-            }
-            if (mqttClient && mqttClient.connected) {
-                try { mqttClient.publish(getMqttTopic(roomId), jsonStr, { qos: 1 }); } catch (e) {}
-            }
-        }
-
-        function handleIncomingMessageOnPC(data) {
-            if (!data || typeof data !== 'object') return;
-
-            if (data.type === 'HELLO_FROM_MOBILE') {
-                markPCConnected();
-                sendSignalFromPCToMobile({ type: 'WELCOME_ACK', timestamp: Date.now() });
-                return;
-            }
-
-            if (data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
-                markPCConnected();
-                const msgId = data.msgId || ('legacy-' + Date.now() + '-' + Math.random());
-                if (!processedMsgIds.has(msgId)) {
-                    processedMsgIds.add(msgId);
-                    addReceivedImageToStock(data.image, data.mode || 'normal', data.groupId || null);
-                }
-                sendSignalFromPCToMobile({ type: 'IMAGE_ACK', msgId: msgId });
-            }
-        }
-
-        function handleIncomingMessageOnMobile(data) {
-            if (!data || typeof data !== 'object') return;
-
-            if (data.type === 'WELCOME_ACK') {
-                markMobileConnected();
-                return;
-            }
-
-            if (data.type === 'IMAGE_ACK' && data.msgId) {
-                markMobileConnected();
-                const beforeLen = pendingImageQueue.length;
-                pendingImageQueue = pendingImageQueue.filter(item => item.msgId !== data.msgId);
-                if (pendingImageQueue.length < beforeLen && !processedMsgIds.has(data.msgId)) {
-                    processedMsgIds.add(data.msgId);
-                    mobileSentCounter++;
-                    const sentCountEl = document.getElementById('mobileSentCount');
-                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
-                }
-            }
-        }
-
+        // PC側の直接通信（P2P）受信設定
         function initPCPeer() {
-            if (typeof mqtt !== 'undefined') {
-                try {
-                    mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-                        keepalive: 30,
-                        reconnectPeriod: 2000,
-                        connectTimeout: 10000
-                    });
-                    const topic = getMqttTopic(roomId);
-                    mqttClient.on('connect', () => {
-                        mqttClient.subscribe(topic, { qos: 1 });
-                    });
-                    mqttClient.on('message', (t, message) => {
-                        try {
-                            const parsed = JSON.parse(message.toString());
-                            handleIncomingMessageOnPC(parsed);
-                        } catch (e) {}
-                    });
-                } catch (e) {}
-            }
-
             if (typeof Peer === 'undefined') return;
-            try {
-                peer = new Peer(roomId, {
-                    config: { iceServers: ICE_SERVERS }
-                });
-                peer.on('connection', (conn) => {
-                    activeConnection = conn;
-
-                    const onConnReady = () => {
-                        markPCConnected();
-                        try { conn.send({ type: 'WELCOME_ACK', timestamp: Date.now() }); } catch (e) {}
-                    };
-
-                    if (conn.open) {
-                        onConnReady();
-                    } else {
-                        conn.on('open', onConnReady);
+            peer = new Peer(roomId, { config: { iceServers: ICE_SERVERS } });
+            
+            peer.on('connection', (conn) => {
+                activeConnection = conn;
+                
+                const onOpen = () => {
+                    const badge = document.getElementById('pcSyncBadge');
+                    if (badge) {
+                        badge.textContent = "✅ スマホカメラ接続中";
+                        badge.className = "text-xs text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-700 font-bold";
                     }
+                    const status = document.getElementById('qrModalStatus');
+                    if (status) status.textContent = "✅ スマホと接続完了！";
+                    setTimeout(closeQRCode, 600);
+                    
+                    try { conn.send({ type: 'WELCOME_ACK' }); } catch(e) {}
+                };
 
-                    conn.on('data', (data) => {
-                        handleIncomingMessageOnPC(data);
-                    });
+                if (conn.open) {
+                    onOpen();
+                } else {
+                    conn.on('open', onOpen);
+                }
+
+                conn.on('data', (data) => {
+                    if (data && data.type === 'NEW_RECEIPT_IMAGE' && data.image) {
+                        addReceivedImageToStock(data.image, data.mode || 'normal', data.groupId || null);
+                    }
                 });
-            } catch (e) {}
+                
+                conn.on('close', () => {
+                    const badge = document.getElementById('pcSyncBadge');
+                    if (badge) {
+                        badge.textContent = "📱 スマホ未接続";
+                        badge.className = "text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700";
+                    }
+                    activeConnection = null;
+                });
+            });
         }
 
+        // スマホ側の直接通信（P2P）接続設定
         function initMobilePeer(targetRoomId) {
             const statusEl = document.getElementById('mobileConnStatus');
-            const topic = getMqttTopic(targetRoomId);
-
-            if (typeof mqtt !== 'undefined') {
-                try {
-                    mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-                        keepalive: 30,
-                        reconnectPeriod: 2000,
-                        connectTimeout: 10000
-                    });
-                    mqttClient.on('connect', () => {
-                        mqttClient.subscribe(topic, { qos: 1 }, () => {
-                            mqttClient.publish(topic, JSON.stringify({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() }), { qos: 1 });
-                        });
-                    });
-                    mqttClient.on('message', (t, message) => {
-                        try {
-                            const parsed = JSON.parse(message.toString());
-                            handleIncomingMessageOnMobile(parsed);
-                        } catch (e) {}
-                    });
-                } catch (e) {}
-            }
-
-            if (mobileHandshakeTimer) clearInterval(mobileHandshakeTimer);
-            mobileHandshakeTimer = setInterval(() => {
-                if (!isPartnerConnected) {
-                    if (mqttClient && mqttClient.connected) {
-                        try { mqttClient.publish(topic, JSON.stringify({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() }), { qos: 1 }); } catch (e) {}
-                    }
-                    if (activeConnection && activeConnection.open) {
-                        try { activeConnection.send({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() }); } catch (e) {}
-                    }
-                } else if (pendingImageQueue.length > 0) {
-                    flushPendingImages();
-                }
-            }, 1800);
-
             if (typeof Peer === 'undefined') return;
 
             function connectWebRTC() {
-                try {
-                    if (peer && !peer.destroyed) peer.destroy();
-                    peer = new Peer({ config: { iceServers: ICE_SERVERS } });
-                    peer.on('open', () => {
-                        const conn = peer.connect(targetRoomId, {
-                            reliable: true,
-                            serialization: 'json'
-                        });
+                if (peer && !peer.destroyed) peer.destroy();
+                peer = new Peer({ config: { iceServers: ICE_SERVERS } });
+                
+                peer.on('open', () => {
+                    const conn = peer.connect(targetRoomId, { reliable: true });
+                    
+                    const onOpen = () => {
+                        activeConnection = conn;
+                        try { conn.send({ type: 'HELLO' }); } catch(e) {}
+                    };
 
-                        const onOpen = () => {
-                            activeConnection = conn;
-                            markMobileConnected();
-                            try { conn.send({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() }); } catch (e) {}
-                        };
-
-                        if (conn.open) {
-                            onOpen();
-                        } else {
-                            conn.on('open', onOpen);
-                        }
-
-                        conn.on('data', (data) => {
-                            handleIncomingMessageOnMobile(data);
-                        });
-
-                        conn.on('close', () => {
-                            activeConnection = null;
-                            if (!mqttClient || !mqttClient.connected) {
-                                isPartnerConnected = false;
-                                if (statusEl) {
-                                    statusEl.textContent = "🔄 再接続しています...";
-                                    statusEl.className = "text-xs text-amber-400 font-bold mt-0.5";
-                                }
+                    if (conn.open) {
+                        onOpen();
+                    } else {
+                        conn.on('open', onOpen);
+                    }
+                    
+                    conn.on('data', (data) => {
+                        if (data && data.type === 'WELCOME_ACK') {
+                            if (statusEl) {
+                                statusEl.textContent = "✅ PCと接続完了！";
+                                statusEl.className = "text-xs text-emerald-400 font-bold mt-0.5";
                             }
-                            setTimeout(connectWebRTC, 3000);
-                        });
+                        }
                     });
-                    peer.on('error', () => {
-                        setTimeout(connectWebRTC, 4000);
+
+                    conn.on('close', () => {
+                        activeConnection = null;
+                        if (statusEl) {
+                            statusEl.textContent = "⚠️ 接続が切れました。再接続中...";
+                            statusEl.className = "text-xs text-amber-400 font-bold mt-0.5";
+                        }
+                        setTimeout(connectWebRTC, 3000);
                     });
-                } catch (e) {
-                    setTimeout(connectWebRTC, 4000);
-                }
+                });
+                
+                peer.on('error', (err) => {
+                    setTimeout(connectWebRTC, 3000);
+                });
             }
             connectWebRTC();
-        }
-
-        function queueAndSendImageToPC(imageBase64, mode, groupId) {
-            const msgId = 'img-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
-            const packet = {
-                type: 'NEW_RECEIPT_IMAGE',
-                msgId: msgId,
-                image: imageBase64,
-                mode: mode,
-                groupId: groupId
-            };
-            pendingImageQueue.push(packet);
-            flushPendingImages();
-        }
-
-        function flushPendingImages() {
-            if (pendingImageQueue.length === 0) return;
-
-            const topic = getMqttTopic(roomId);
-            for (let i = 0; i < pendingImageQueue.length; i++) {
-                const pkt = pendingImageQueue[i];
-                let sentViaWebRTC = false;
-                let sentViaMQTT = false;
-
-                if (activeConnection && activeConnection.open) {
-                    try {
-                        activeConnection.send(pkt);
-                        sentViaWebRTC = true;
-                    } catch (e) {}
-                }
-
-                if (mqttClient && mqttClient.connected) {
-                    try {
-                        mqttClient.publish(topic, JSON.stringify(pkt), { qos: 1 });
-                        sentViaMQTT = true;
-                    } catch (e) {}
-                }
-
-                if ((sentViaWebRTC || sentViaMQTT) && !processedMsgIds.has(pkt.msgId)) {
-                    processedMsgIds.add(pkt.msgId);
-                    mobileSentCounter++;
-                    const sentCountEl = document.getElementById('mobileSentCount');
-                    if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
-                }
-            }
         }
 
         function showQRCode() {
@@ -1006,6 +835,7 @@
             return corners;
         }
 
+        // スマホからの直接送信処理（P2P）
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
             if (!video) return;
@@ -1034,7 +864,19 @@
                 updateLongProgressUI();
 
                 if (isMobileRemote) {
-                    queueAndSendImageToPC(flattened, 'long', currentLongGroupId);
+                    if (activeConnection && activeConnection.open) {
+                        try {
+                            activeConnection.send({
+                                type: 'NEW_RECEIPT_IMAGE',
+                                image: flattened,
+                                mode: 'long',
+                                groupId: currentLongGroupId
+                            });
+                            mobileSentCounter++;
+                            const sentCountEl = document.getElementById('mobileSentCount');
+                            if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
+                        } catch(e) { console.error(e); }
+                    }
                     const previewEl = document.getElementById('mobileLastPreview');
                     if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-amber-500/50">`; }
                 } else {
@@ -1046,7 +888,19 @@
             closeLiveCamera();
 
             if (isMobileRemote) {
-                queueAndSendImageToPC(flattened, 'normal', null);
+                if (activeConnection && activeConnection.open) {
+                    try {
+                        activeConnection.send({
+                            type: 'NEW_RECEIPT_IMAGE',
+                            image: flattened,
+                            mode: 'normal',
+                            groupId: null
+                        });
+                        mobileSentCounter++;
+                        const sentCountEl = document.getElementById('mobileSentCount');
+                        if (sentCountEl) sentCountEl.textContent = `送信済: ${mobileSentCounter}枚`;
+                    } catch(e) { console.error(e); }
+                }
                 const previewEl = document.getElementById('mobileLastPreview');
                 if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`; }
             } else {
@@ -1196,9 +1050,6 @@
         function removeImage(idx) { receiptItems.splice(idx, 1); updateThumbnailUI(); }
         function clearImages() { receiptItems = []; updateThumbnailUI(); }
 
-        // =========================================================================
-        // 【完全修正】APIのスパム制限に絶対に引っかからない「完全な順番待ち（直列処理）」へ巻き戻し
-        // =========================================================================
         async function analyzeReceipts() {
             if (currentLongGroupCount > 0) {
                 finishLongReceiptGroup();
@@ -1222,7 +1073,6 @@
             if (progressBar) progressBar.style.width = `0%`;
             if (progressCount) progressCount.textContent = `0 / ${total} 件完了`;
 
-            // 1件ずつ完全に終わらせることで、無料枠の「同時リクエスト制限」を確実に回避する
             for (let i = 0; i < total; i++) {
                 const item = workingItems[i];
                 const isLongSet = item.images.length > 1 || item.mode === 'long';
@@ -1268,7 +1118,7 @@
                             failedIndices.push(i);
                         } else {
                             if (loadingText) loadingText.textContent = `混雑のため ${i + 1}件目を再試行中...`;
-                            await new Promise(r => setTimeout(r, 2000)); // 再試行時は確実に2秒待つ
+                            await new Promise(r => setTimeout(r, 2000));
                         }
                     }
                 }
@@ -1278,10 +1128,8 @@
                 if (progressBar) progressBar.style.width = `${percent}%`;
                 if (progressCount) progressCount.textContent = `${completed} / ${total} 件完了`;
                 
-                // 1件終わるごとに画面のテーブルに即時反映させる
                 renderTable();
 
-                // 次の画像へ行く前に、スパム制限回避のためのクールダウンタイム（1秒）を挟む
                 if (i < total - 1) {
                     await new Promise(r => setTimeout(r, 1000));
                 }
