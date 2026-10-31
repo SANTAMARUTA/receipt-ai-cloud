@@ -6,24 +6,27 @@ export default async function handler(req, res) {
     apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
 
     try {
-        const { image, mode } = req.body;
-        if (!image) return res.status(400).json({ error: '画像データがありません' });
+        const { image, images, mode } = req.body;
+        const imageList = Array.isArray(images) && images.length > 0 ? images : (image ? [image] : []);
+        if (imageList.length === 0) return res.status(400).json({ error: '画像データがありません' });
 
         let promptText = "";
         if (mode === 'long') {
-            promptText = "これは長いレシートを分割撮影した中の1枚です。この画像から取引データを丁寧に抽出し、軽減税率(8%)と通常税率(10%)が混在している場合は税率ごとに分けて複数行（配列）で抽出してください。以下のJSON配列形式のみで出力：[{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 金額数値, \"tax\": 消費税額数値, \"category\": \"勘定科目\", \"regNo\": \"登録番号(Tから始まる番号,不明なら空欄)\", \"note\": \"備考\"}]";
+            promptText = "これは1つの長いレシートを分割撮影した画像セットです。複数枚の画像で重なっている部分を考慮して統合し、取引データを丁寧に抽出してください。軽減税率(8%)と通常税率(10%)が混在している場合は税率ごとに分けて複数行（配列）で抽出してください。以下のJSON配列形式のみで出力：[{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 金額数値, \"tax\": 消費税額数値, \"category\": \"勘定科目\", \"regNo\": \"登録番号(Tから始まる番号,不明なら空欄)\", \"note\": \"備考\"}]";
         } else {
             promptText = "これはレシート/領収書画像です。情報を丁寧に抽出し、軽減税率(8%)と通常税率(10%)が混在している場合は分けて複数行で抽出してください。以下のJSON配列形式（または単一オブジェクト）で出力：[{\"date\": \"YYYY-MM-DD\", \"store\": \"店舗名\", \"total\": 金額数値, \"tax\": 消費税額数値, \"category\": \"勘定科目\", \"regNo\": \"登録番号(Tから始まる番号,不明なら空欄)\", \"note\": \"備考\"}]";
         }
 
         const parts = [{ text: promptText }];
-        const matches = image.match(/^data:(image\/[a-zA-Z+-]+);base64,(.+)$/);
-        if (matches) {
-            parts.push({ inline_data: { mime_type: matches[1], data: matches[2] } });
+        for (const imgStr of imageList) {
+            const matches = String(imgStr).match(/^data:(image\/[a-zA-Z+-]+);base64,(.+)$/);
+            if (matches) {
+                parts.push({ inline_data: { mime_type: matches[1], data: matches[2] } });
+            }
         }
 
         // 安定稼働する確実なモデル順序
-        const modelsToTry = ["gemini-3.8-flash", "gemini-3.6-flash"];
+        const modelsToTry = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
         let data = null;
         let lastError = null;
 
