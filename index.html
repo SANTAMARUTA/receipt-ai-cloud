@@ -37,6 +37,7 @@
                     </div>
                 </div>
                 <span id="mobileSentCount" class="bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full text-xs font-bold">送信済: 0枚</span>
+                <button onclick="retryPendingTransfers()" class="text-xs text-cyan-300 underline">未送信を再送</button>
             </div>
 
             <!-- 撮影モード切替（通常 / 長尺） -->
@@ -91,7 +92,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v3.1</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">転送修正版 v3.2.1</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -423,7 +424,11 @@
             closeLiveCamera();
         }
 
+        const stockedImages = new Set();
         function addReceivedImageToStock(imageBase64, mode, groupId) {
+            // Commit deduplication before rendering: a UI failure must not replay an insertion.
+            if (stockedImages.has(imageBase64)) return;
+            stockedImages.add(imageBase64);
             if (mode === 'long' && groupId) {
                 const existing = receiptItems.find(item => item.groupId === groupId);
                 if (existing) {
@@ -443,7 +448,8 @@
                     images: [imageBase64]
                 });
             }
-            updateThumbnailUI();
+            try { updateThumbnailUI(); }
+            catch (error) { console.warn('画像は受信済みですが一覧の更新に失敗しました', error); }
         }
 
         let chunkBuffers = Object.create(null);
@@ -453,6 +459,7 @@
         const pendingTransfers = new Map();
         const receivedTransfers = new Set();
         let transferRunning = false;
+        const transferAttempts = new Map();
 
         function connectionStatus(text, ok = false) {
             for (const id of isMobileRemote ? ['mobileConnStatus'] : ['pcSyncBadge', 'qrModalStatus']) {
@@ -473,11 +480,12 @@
             } else if (data.type === 'NEW_RECEIPT_IMAGE' && !isMobileRemote) {
                 if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data.image || '') || !data.transferId) return;
                 if (!receivedTransfers.has(data.transferId)) {
-                    addReceivedImageToStock(data.image, data.mode, data.groupId);
                     receivedTransfers.add(data.transferId);
+                    addReceivedImageToStock(data.image, data.mode, data.groupId);
                 }
                 conn.send({type:'IMAGE_ACK', transferId:data.transferId});
             } else if (data.type === 'IMAGE_ACK' && pendingTransfers.delete(data.transferId)) {
+                transferAttempts.delete(data.transferId);
                 mobileSentCounter++;
                 document.getElementById('mobileSentCount').textContent = `送信済: ${mobileSentCounter}枚 / 待機: ${pendingTransfers.size}枚`;
             }
@@ -574,12 +582,24 @@
             document.getElementById('mobileSentCount').textContent = `送信済: ${mobileSentCounter}枚 / 待機: ${pendingTransfers.size}枚`;
             flushTransfers();
         }
+        function retryPendingTransfers() {
+            transferAttempts.clear();
+            flushTransfers();
+            if (!activeConnection?.open) scheduleReconnect();
+        }
         async function flushTransfers() {
             if (transferRunning || !activeConnection?.open) return;
             transferRunning = true;
             const conn = activeConnection;
             try {
-                for (const [id, payload] of pendingTransfers) {
+                for (const [id, payload] of [...pendingTransfers]) {
+                    if (!pendingTransfers.has(id)) continue;
+                    const attempts = transferAttempts.get(id) || 0;
+                    if (attempts >= 5) {
+                        connectionStatus('転送確認が取れないため自動再送を停止しました。「未送信を再送」を押してください。');
+                        continue;
+                    }
+                    transferAttempts.set(id, attempts + 1);
                     const text = JSON.stringify(payload), size = 12000, total = Math.ceil(text.length / size);
                     for (let index = 0; index < total; index++) {
                         if (conn !== activeConnection || !conn.open) return;
@@ -892,7 +912,11 @@
             return corners;
         }
 
+        let lastSnapshotTime = -Infinity;
         function takeSnapshot() {
+            const now = Date.now();
+            if (now - lastSnapshotTime < 900) return;
+            lastSnapshotTime = now;
             const video = document.getElementById('cameraVideo');
             if (!video || !video.videoWidth || !video.videoHeight) { alert('カメラの映像が表示されてから撮影してください。'); return; }
             const vw = video.videoWidth, vh = video.videoHeight;
@@ -1354,7 +1378,7 @@
 
         function exportCSV() {
             if (receiptsData.length === 0) { alert('出力データがありません'); return; }
-            const headers = tableColumns.map(col => `"${escapeHTML(col.label)}"`).join(',');
+            const headers = tableColumns.map(col => `"${String(col.label).replace(/"/g, '""')}"`).join(',');
             let csv = '\ufeff' + headers + '\n';
             receiptsData.forEach(r => {
                 const row = tableColumns.map(col => `"${String(r[col.key] ?? '').replace(/^[=+@\t\r-]/, m => "'" + m).replace(/"/g, '""')}"`).join(',');
