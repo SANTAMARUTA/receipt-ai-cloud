@@ -92,7 +92,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">転送修正版 v3.2.1</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">解析診断版 v3.2.2</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -1121,11 +1121,19 @@
         // =========================================================================
         // 【完全修正】エラーの原因を明確にポップアップ表示し、ブラックボックスをなくす
         // =========================================================================
+        let analysisRunning = false;
+        let analysisBlockedUntil = 0;
         async function analyzeReceipts() {
+            if (analysisRunning) return;
+            if (Date.now() < analysisBlockedUntil) {
+                alert(`利用制限の再試行待ちです。あと${Math.ceil((analysisBlockedUntil-Date.now())/1000)}秒待ってください。`);
+                return;
+            }
             if (currentLongGroupCount > 0) {
                 finishLongReceiptGroup();
             }
             if (receiptItems.length === 0) return;
+            analysisRunning = true;
 
             const loadingModal = document.getElementById('loadingModal');
             const loadingText = document.getElementById('loadingText');
@@ -1139,12 +1147,17 @@
             const total = workingItems.length;
             let failedIndices = [];
             let completed = 0;
+            let batchStopReason = null;
 
             if (loadingTitle) loadingTitle.textContent = "AI高速解析を実行中...";
             if (progressBar) progressBar.style.width = `0%`;
             if (progressCount) progressCount.textContent = `0 / ${total} 件完了`;
 
             for (let i = 0; i < total; i++) {
+                if (batchStopReason) {
+                    failedIndices.push({index:i, reason:'未実行（API制限・設定エラーのため中断）'});
+                    continue;
+                }
                 const item = workingItems[i];
                 const isLongSet = item.images.length > 1 || item.mode === 'long';
 
@@ -1175,7 +1188,21 @@
                             throw new Error(`サーバー応答エラー: Vercelのタイムアウト等の可能性があります (${response.status})`);
                         }
 
-                        if (!response.ok) { const error = new Error(resJson.error || `解析失敗 (${response.status})`); error.retryable = Boolean(resJson.retryable); throw error; }
+                        if (!response.ok) {
+                            const diagnostics = [];
+                            if (resJson.model) diagnostics.push(`モデル: ${resJson.model}`);
+                            if (resJson.stage) diagnostics.push(`処理: ${resJson.stage}`);
+                            if (resJson.retryAfterSeconds) diagnostics.push(`再試行目安: ${resJson.retryAfterSeconds}秒後（利用枠の回復を保証するものではありません）`);
+                            if (resJson.providerMessage) diagnostics.push(`Google応答: ${resJson.providerMessage}`);
+                            const error = new Error([resJson.error || `解析失敗 (${response.status})`, ...diagnostics].join('\n'));
+                            error.retryable = Boolean(resJson.retryable);
+                            error.stopBatch = Boolean(resJson.stopBatch) || [401,403,404,429].includes(response.status);
+                            if (response.status === 429) {
+                                const delay = Number(resJson.retryAfterSeconds);
+                                analysisBlockedUntil = Date.now() + Math.max(1000, (Number.isFinite(delay) && delay > 0 ? delay : 60) * 1000);
+                            }
+                            throw error;
+                        }
 
                         const rows = Array.isArray(resJson) ? resJson : [resJson];
                         if (!rows.length || rows.some(r => !r || typeof r !== 'object')) throw new Error('有効な取引データが返されませんでした。');
@@ -1185,6 +1212,7 @@
                         });
                         success = true;
                     } catch (err) {
+                        if (err.stopBatch) batchStopReason = err.message;
                         console.warn(`${i + 1}件目 試行 ${attempts}回目失敗:`, err.message);
                         if (attempts >= maxAttempts || err.retryable === false) {
                             attempts = maxAttempts;
@@ -1206,26 +1234,21 @@
                     renderTable();
                 }
 
-                if (i < total - 1) {
+                if (!batchStopReason && i < total - 1) {
                     await new Promise(r => setTimeout(r, 1000));
                 }
             }
 
-            if (loadingTitle) loadingTitle.textContent = "すべての解析が完了しました！";
-            if (loadingText) loadingText.textContent = "赤枠・黄枠の項目がある場合はクリックしてご確認ください。";
-
-            setTimeout(() => {
-                if (loadingModal) loadingModal.classList.add('hidden');
-                
-                receiptItems = [...failedIndices.map(f => workingItems[f.index]), ...receiptItems.filter(item => !workingItems.includes(item))];
-                updateThumbnailUI();
-
-                if (failedIndices.length > 0) {
-                    // 何が原因で失敗したのかを明確にポップアップで表示する
-                    const reasons = failedIndices.map(f => `- ${f.index + 1}件目: ${f.reason}`).join('\n');
-                    alert(`${failedIndices.length}件の解析に失敗しました。\n\n【エラー詳細】\n${reasons}\n\n※「APIキーが設定されていません」と出る場合はVercelのEnvironment Variablesをご確認ください。`);
-                }
-            }, 800);
+            if (loadingTitle) loadingTitle.textContent = completed === total ? 'すべての解析が完了しました' : `${completed} / ${total}件成功・${total-completed}件未完了`;
+            if (loadingText) loadingText.textContent = batchStopReason ? 'API制限・設定エラーのため中断しました。画像は保持しています。' : '解析結果をご確認ください。未完了の画像は保持しています。';
+            receiptItems = [...failedIndices.map(f => workingItems[f.index]), ...receiptItems.filter(item => !workingItems.includes(item))];
+            analysisRunning = false;
+            if (loadingModal) loadingModal.classList.add('hidden');
+            updateThumbnailUI();
+            if (failedIndices.length > 0) {
+                const reasons = batchStopReason || failedIndices.map(f => `- ${f.index+1}件目: ${f.reason}`).join('\n');
+                alert(`${completed} / ${total}件成功。${total-completed}件は未完了です。画像は残しています。\n\n${reasons}`);
+            }
         }
 
         function addRowManually() {

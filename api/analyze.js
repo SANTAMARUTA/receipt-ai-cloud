@@ -22,12 +22,36 @@ export default async function handler(req) {
  const controller = new AbortController();
  const timer = setTimeout(()=>controller.abort(),55000);
  const headers = {'Content-Type':'application/json','x-goog-api-key':key};
- const fail = status => json({error: ({400:'APIキーまたはモデル設定が無効です。',401:'APIキーが無効です。',403:'Gemini APIの利用権限がありません。キーの制限を確認してください。',404:'モデルが利用できません。GEMINI_MODELを削除して自動選択するか、利用可能なモデル名に変更してください。',429:'Gemini APIの利用上限です。Google AI Studioの割り当て・課金設定を確認し、時間をおいて再試行してください。'})[status] || `Gemini APIが利用できません (HTTP ${status})。`,retryable:status>=500},status>=500?503:status);
+ let selectedModel = '';
+ const fail = async (response, stage) => {
+  const status = response.status;
+  let provider = {};
+  try { provider = (await response.json()).error || {}; } catch {}
+  const details = Array.isArray(provider.details) ? provider.details : [];
+  const violations = details.flatMap(d => Array.isArray(d.violations) ? d.violations : []);
+  const quota = violations.map(v => ({
+   metric: String(v.quotaMetric || '').slice(0,200),
+   id: String(v.quotaId || '').slice(0,200),
+   model: String(v.quotaDimensions?.model || '').slice(0,100),
+   limit: v.quotaValue == null ? '' : String(v.quotaValue).slice(0,30)
+  }));
+  const retry = details.find(d => /google.rpc.RetryInfo$/.test(d['@type'] || ''));
+  const delay = typeof retry?.retryDelay === 'string' ? Number(retry.retryDelay.replace(/s$/, '')) : NaN;
+  const retryAfterSeconds = Number.isFinite(delay) && delay > 0 ? Math.ceil(delay) : null;
+  const message = String(provider.message || '').split(key).join('[REDACTED]').replace(/AIza[\w-]+/g,'[REDACTED]').replace(/projects\/[\w-]+/g,'projects/[REDACTED]').slice(0,1800);
+  const zeroQuota = quota.some(q => q.limit === '0') || /limit:\s*0(?:\D|$)/i.test(message);
+  let error = ({400:'APIキーまたはモデル設定が無効です。',401:'APIキーが無効です。',403:'Gemini APIの利用権限がありません。キーの制限を確認してください。',404:'モデルが利用できません。GEMINI_MODELを確認してください。',429:'Gemini APIが利用制限（429）を返しました。Google AI Studioで対象プロジェクト・モデルの制限を確認してください。'})[status] || `Gemini APIが利用できません (HTTP ${status})。`;
+  if (status === 429 && zeroQuota) error = '対象モデルの利用枠が0と報告されています。待つだけでは解消しない場合があります。Google AI StudioでAPIキーのプロジェクト・モデル・利用プランを確認してください。';
+  return json({error, retryable:status>=500, stopBatch:[400,401,403,404,429].includes(status),
+   model:selectedModel, stage, providerStatus:String(provider.status || '').slice(0,100),
+   providerMessage:message, quota, retryAfterSeconds, zeroQuota
+  },status>=500?503:status);
+ };
  try {
   let model = (process.env.GEMINI_MODEL || '').trim().replace(/^models\//,'');
   if (!model) {
    const res = await fetch(`${API}/models?pageSize=1000`,{headers,signal:controller.signal});
-   if(!res.ok) return fail(res.status);
+   if(!res.ok) return await fail(res, 'models.list');
    const data = await res.json();
    const models = (data.models || []).filter(m=>/^models\/gemini-.*flash/.test(m.name) && !/image|audio|tts|live|preview|exp|robotics/.test(m.name) && m.supportedGenerationMethods?.includes('generateContent'));
    models.sort((a,b)=>b.name.localeCompare(a.name,undefined,{numeric:true}));
@@ -35,10 +59,11 @@ export default async function handler(req) {
    if(!model) return json({error:'利用可能なモデルがありません。GEMINI_MODELに画像対応モデル名を設定してください。'},503);
   }
   if(!/^[a-zA-Z0-9._-]+$/.test(model)) return json({error:'GEMINI_MODELの値が不正です。'},503);
+  selectedModel = model;
   const properties = Object.fromEntries(fields.map(k=>[k,{type:k==='total'||k==='tax'?'NUMBER':'STRING'}]));
   properties.uncertain = {type:'ARRAY',items:{type:'STRING',enum:fields}};
   const res = await fetch(`${API}/models/${model}:generateContent`,{method:'POST',headers,signal:controller.signal,body:JSON.stringify({contents:[{parts}],generationConfig:{responseMimeType:'application/json',responseSchema:{type:'ARRAY',items:{type:'OBJECT',properties,required:[...fields,'uncertain']}}}})});
-  if(!res.ok) return fail(res.status);
+  if(!res.ok) return await fail(res, 'generateContent');
   const data = await res.json();
   const candidate = data.candidates?.[0];
   if(candidate?.finishReason && candidate.finishReason!=='STOP') return json({error:'AIが解析を完了できませんでした。画像を減らすか撮り直してください。'},422);
