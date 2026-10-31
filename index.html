@@ -92,7 +92,7 @@
                 <div>
                     <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-cyan-200 bg-clip-text text-transparent">レシートAIクラウド</h1>
                     <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.4</span>
+                        <span class="text-xs text-cyan-300 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-800/60 font-semibold">プロダクト完全版 v2.5</span>
                         <span id="pcSyncBadge" class="text-xs text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">📱 スマホ未接続</span>
                     </div>
                 </div>
@@ -269,7 +269,7 @@
     <div id="loadingModal" class="hidden fixed inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 z-50 space-y-6">
         <div class="animate-spin rounded-full h-20 w-20 border-4 border-cyan-400 border-t-transparent shadow-[0_0_35px_rgba(6,182,212,0.5)]"></div>
         <div class="text-center space-y-3 max-w-sm w-full bg-slate-900/90 border border-slate-800 p-6 rounded-3xl shadow-2xl">
-            <p class="text-xl font-bold text-cyan-300" id="loadingTitle">高速一括AI解析中...</p>
+            <p class="text-xl font-bold text-cyan-300" id="loadingTitle">AI並列解析中...</p>
             <p class="text-xs text-slate-300" id="loadingText">準備中...</p>
             <div class="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800">
                 <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full transition-all duration-300 w-0"></div>
@@ -456,11 +456,8 @@
             updateThumbnailUI();
         }
 
-        // =========================================================================
-        // 【ハイブリッド接続エンジン：WebRTC (STUN/TURN) ＋ WebSocket (MQTT over WSS)】
-        // =========================================================================
         function getMqttTopic(targetRoom) {
-            return 'receipt-ai-cloud-v24/' + targetRoom;
+            return 'receipt-ai-cloud-v25/' + targetRoom;
         }
 
         function markPCConnected() {
@@ -537,7 +534,6 @@
         }
 
         function initPCPeer() {
-            // 1. WebSocketリレー (MQTT over WSS) の起動
             if (typeof mqtt !== 'undefined') {
                 try {
                     mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
@@ -555,12 +551,9 @@
                             handleIncomingMessageOnPC(parsed);
                         } catch (e) {}
                     });
-                } catch (e) {
-                    console.warn('MQTT fallback init error:', e);
-                }
+                } catch (e) {}
             }
 
-            // 2. PeerJS (WebRTC STUN/TURN) の起動
             if (typeof Peer === 'undefined') return;
             try {
                 peer = new Peer(roomId, {
@@ -584,16 +577,13 @@
                         handleIncomingMessageOnPC(data);
                     });
                 });
-            } catch (e) {
-                console.warn('PeerJS PC init error:', e);
-            }
+            } catch (e) {}
         }
 
         function initMobilePeer(targetRoomId) {
             const statusEl = document.getElementById('mobileConnStatus');
             const topic = getMqttTopic(targetRoomId);
 
-            // 1. WebSocketリレー (MQTT over WSS) の起動
             if (typeof mqtt !== 'undefined') {
                 try {
                     mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
@@ -612,31 +602,23 @@
                             handleIncomingMessageOnMobile(parsed);
                         } catch (e) {}
                     });
-                } catch (e) {
-                    console.warn('MQTT mobile init error:', e);
-                }
+                } catch (e) {}
             }
 
-            // 接続完了まで定期的にHELLOハンドシェイクを送る
             if (mobileHandshakeTimer) clearInterval(mobileHandshakeTimer);
             mobileHandshakeTimer = setInterval(() => {
                 if (!isPartnerConnected) {
                     if (mqttClient && mqttClient.connected) {
-                        try {
-                            mqttClient.publish(topic, JSON.stringify({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() }), { qos: 1 });
-                        } catch (e) {}
+                        try { mqttClient.publish(topic, JSON.stringify({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() }), { qos: 1 }); } catch (e) {}
                     }
                     if (activeConnection && activeConnection.open) {
-                        try {
-                            activeConnection.send({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() });
-                        } catch (e) {}
+                        try { activeConnection.send({ type: 'HELLO_FROM_MOBILE', timestamp: Date.now() }); } catch (e) {}
                     }
                 } else if (pendingImageQueue.length > 0) {
                     flushPendingImages();
                 }
             }, 1800);
 
-            // 2. PeerJS (WebRTC STUN/TURN) の起動
             if (typeof Peer === 'undefined') return;
 
             function connectWebRTC() {
@@ -800,9 +782,6 @@
             updateLongProgressUI();
         }
 
-        // =========================================================================
-        // 【完全維持】最大連結成分抽出 ＋ 4頂点極値検出 ＋ 台形傾き4段階精度判定
-        // =========================================================================
         function startRealtimeReceiptTracking() {
             const video = document.getElementById('cameraVideo');
             const overlay = document.getElementById('overlayCanvas');
@@ -902,41 +881,13 @@
             const distortion = Math.max(wDiff, hDiff, dDiff * 0.85);
 
             if (distortion < 0.08) {
-                return {
-                    badgeText: "🟢 最高精度 (真上・フラット)",
-                    badgeClass: "bg-emerald-400 text-slate-950 font-extrabold px-3 py-1.5 rounded-full text-xs shadow-lg",
-                    tipText: "完璧な角度です！このままシャッターを押してください",
-                    strokeColor: "#3b82f6",
-                    fillColor: "rgba(59, 130, 246, 0.28)",
-                    cornerColor: "#60a5fa"
-                };
+                return { badgeText: "🟢 最高精度 (真上・フラット)", badgeClass: "bg-emerald-400 text-slate-950 font-extrabold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "完璧な角度です！このままシャッターを押してください", strokeColor: "#3b82f6", fillColor: "rgba(59, 130, 246, 0.28)", cornerColor: "#60a5fa" };
             } else if (distortion < 0.16) {
-                return {
-                    badgeText: "🔵 高精度 (良好)",
-                    badgeClass: "bg-blue-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg",
-                    tipText: "良好です。シャッターを押すと自動で真っ直ぐ補正されます",
-                    strokeColor: "#3b82f6",
-                    fillColor: "rgba(59, 130, 246, 0.25)",
-                    cornerColor: "#60a5fa"
-                };
+                return { badgeText: "🔵 高精度 (良好)", badgeClass: "bg-blue-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "良好です。シャッターを押すと自動で真っ直ぐ補正されます", strokeColor: "#3b82f6", fillColor: "rgba(59, 130, 246, 0.25)", cornerColor: "#60a5fa" };
             } else if (distortion < 0.28) {
-                return {
-                    badgeText: "🟠 中精度 (やや斜め)",
-                    badgeClass: "bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-full text-xs shadow-lg",
-                    tipText: "少し斜めです。真上から撮るとより文字がくっきり読めます",
-                    strokeColor: "#f59e0b",
-                    fillColor: "rgba(245, 158, 11, 0.24)",
-                    cornerColor: "#fbbf24"
-                };
+                return { badgeText: "🟠 中精度 (やや斜め)", badgeClass: "bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "少し斜めです。真上から撮るとより文字がくっきり読めます", strokeColor: "#f59e0b", fillColor: "rgba(245, 158, 11, 0.24)", cornerColor: "#fbbf24" };
             } else {
-                return {
-                    badgeText: "🔴 低精度 (傾き大)",
-                    badgeClass: "bg-rose-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg",
-                    tipText: "斜めに歪んでいます。カメラをレシートの真上へ移動させてください",
-                    strokeColor: "#f43f5e",
-                    fillColor: "rgba(244, 63, 94, 0.24)",
-                    cornerColor: "#fb7185"
-                };
+                return { badgeText: "🔴 低精度 (傾き大)", badgeClass: "bg-rose-500 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg", tipText: "斜めに歪んでいます。カメラをレシートの真上へ移動させてください", strokeColor: "#f43f5e", fillColor: "rgba(244, 63, 94, 0.24)", cornerColor: "#fb7185" };
             }
         }
 
@@ -944,7 +895,6 @@
             const imgData = ctx.getImageData(0, 0, w, h).data;
             const totalPixels = w * h;
             const whiteness = new Float32Array(totalPixels);
-
             let sumW = 0;
             for (let i = 0; i < totalPixels; i++) {
                 const idx = i * 4;
@@ -956,7 +906,6 @@
                 sumW += score;
             }
             const meanW = sumW / totalPixels;
-
             const hist = new Int32Array(256);
             for (let i = 0; i < totalPixels; i++) {
                 const bin = Math.min(255, Math.floor(whiteness[i]));
@@ -967,39 +916,25 @@
                 acc += hist[b];
                 if (acc >= totalPixels * 0.15) { p85 = b; break; }
             }
-
             if (p85 < 115 || (p85 - meanW) < 16) return null;
-
             const threshold = Math.max(110, meanW + (p85 - meanW) * 0.38);
-
             const rawMask = new Uint8Array(totalPixels);
             for (let y = 2; y < h - 2; y++) {
                 for (let x = 2; x < w - 2; x++) {
-                    if (whiteness[y * w + x] >= threshold) {
-                        rawMask[y * w + x] = 1;
-                    }
+                    if (whiteness[y * w + x] >= threshold) { rawMask[y * w + x] = 1; }
                 }
             }
-
             const mask = new Uint8Array(totalPixels);
             for (let y = 2; y < h - 2; y++) {
                 for (let x = 2; x < w - 2; x++) {
                     const idx = y * w + x;
-                    if (
-                        rawMask[idx] ||
-                        rawMask[idx - 1] || rawMask[idx + 1] ||
-                        rawMask[idx - w] || rawMask[idx + w]
-                    ) {
-                        mask[idx] = 1;
-                    }
+                    if (rawMask[idx] || rawMask[idx - 1] || rawMask[idx + 1] || rawMask[idx - w] || rawMask[idx + w]) { mask[idx] = 1; }
                 }
             }
-
             const visited = new Uint8Array(totalPixels);
             const queue = new Int32Array(totalPixels);
             let bestBlob = null;
             let bestScore = 0;
-
             for (let y = 4; y < h - 4; y++) {
                 for (let x = 4; x < w - 4; x++) {
                     const startIdx = y * w + x;
@@ -1007,124 +942,75 @@
                         let head = 0, tail = 0;
                         queue[tail++] = startIdx;
                         visited[startIdx] = 1;
-
                         let minX = x, maxX = x, minY = y, maxY = y;
                         let sumX = 0, sumY = 0;
-
                         while (head < tail) {
                             const curr = queue[head++];
                             const cy = Math.floor(curr / w);
                             const cx = curr - cy * w;
-
-                            sumX += cx;
-                            sumY += cy;
-                            if (cx < minX) minX = cx;
-                            if (cx > maxX) maxX = cx;
-                            if (cy < minY) minY = cy;
-                            if (cy > maxY) maxY = cy;
-
+                            sumX += cx; sumY += cy;
+                            if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+                            if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
                             const n1 = curr - 1, n2 = curr + 1, n3 = curr - w, n4 = curr + w;
                             if (cx > 2 && mask[n1] && !visited[n1]) { visited[n1] = 1; queue[tail++] = n1; }
                             if (cx < w - 3 && mask[n2] && !visited[n2]) { visited[n2] = 1; queue[tail++] = n2; }
                             if (cy > 2 && mask[n3] && !visited[n3]) { visited[n3] = 1; queue[tail++] = n3; }
                             if (cy < h - 3 && mask[n4] && !visited[n4]) { visited[n4] = 1; queue[tail++] = n4; }
                         }
-
                         const area = tail;
                         if (area < totalPixels * 0.04 || area > totalPixels * 0.88) continue;
-
-                        const bw = maxX - minX + 1;
-                        const bh = maxY - minY + 1;
+                        const bw = maxX - minX + 1, bh = maxY - minY + 1;
                         if (bw < w * 0.18 || bh < h * 0.18) continue;
-
                         const fillRatio = area / (bw * bh);
                         if (fillRatio < 0.35) continue;
-
-                        const centerX = sumX / area;
-                        const centerY = sumY / area;
+                        const centerX = sumX / area, centerY = sumY / area;
                         const distFromCenter = Math.hypot((centerX - w * 0.5) / w, (centerY - h * 0.5) / h);
                         const blobScore = area * (1.2 - distFromCenter);
-
                         if (blobScore > bestScore) {
                             bestScore = blobScore;
-                            bestBlob = {
-                                pixels: queue.slice(0, tail),
-                                minX, maxX, minY, maxY,
-                                cx: centerX, cy: centerY
-                            };
+                            bestBlob = { pixels: queue.slice(0, tail), minX, maxX, minY, maxY, cx: centerX, cy: centerY };
                         }
                     }
                 }
             }
-
             if (!bestBlob) return null;
-
             const { pixels, minX, maxX, minY, maxY, cx, cy } = bestBlob;
-            const spanX = Math.max(20, maxX - minX);
-            const spanY = Math.max(20, maxY - minY);
-
+            const spanX = Math.max(20, maxX - minX), spanY = Math.max(20, maxY - minY);
             let maxTL = -1e9, maxTR = -1e9, maxBR = -1e9, maxBL = -1e9;
             for (let i = 0; i < pixels.length; i++) {
                 const p = pixels[i];
-                const py = Math.floor(p / w);
-                const px = p - py * w;
-
-                const nx = (px - cx) / spanX;
-                const ny = (py - cy) / spanY;
-
-                const sTL = -nx - ny;
-                const sTR = +nx - ny;
-                const sBR = +nx + ny;
-                const sBL = -nx + ny;
-
-                if (sTL > maxTL) maxTL = sTL;
-                if (sTR > maxTR) maxTR = sTR;
-                if (sBR > maxBR) maxBR = sBR;
-                if (sBL > maxBL) maxBL = sBL;
+                const py = Math.floor(p / w), px = p - py * w;
+                const nx = (px - cx) / spanX, ny = (py - cy) / spanY;
+                const sTL = -nx - ny, sTR = +nx - ny, sBR = +nx + ny, sBL = -nx + ny;
+                if (sTL > maxTL) maxTL = sTL; if (sTR > maxTR) maxTR = sTR;
+                if (sBR > maxBR) maxBR = sBR; if (sBL > maxBL) maxBL = sBL;
             }
-
             const tol = 0.045;
-            let tlX = 0, tlY = 0, tlC = 0;
-            let trX = 0, trY = 0, trC = 0;
-            let brX = 0, brY = 0, brC = 0;
-            let blX = 0, blY = 0, blC = 0;
-
+            let tlX = 0, tlY = 0, tlC = 0, trX = 0, trY = 0, trC = 0, brX = 0, brY = 0, brC = 0, blX = 0, blY = 0, blC = 0;
             for (let i = 0; i < pixels.length; i++) {
                 const p = pixels[i];
-                const py = Math.floor(p / w);
-                const px = p - py * w;
-
-                const nx = (px - cx) / spanX;
-                const ny = (py - cy) / spanY;
-
+                const py = Math.floor(p / w), px = p - py * w;
+                const nx = (px - cx) / spanX, ny = (py - cy) / spanY;
                 if (-nx - ny >= maxTL - tol) { tlX += px; tlY += py; tlC++; }
                 if (+nx - ny >= maxTR - tol) { trX += px; trY += py; trC++; }
                 if (+nx + ny >= maxBR - tol) { brX += px; brY += py; brC++; }
                 if (-nx + ny >= maxBL - tol) { blX += px; blY += py; blC++; }
             }
-
             if (!tlC || !trC || !brC || !blC) return null;
-
             const corners = [
                 { x: (tlX / tlC) / w, y: (tlY / tlC) / h },
                 { x: (trX / trC) / w, y: (trY / trC) / h },
                 { x: (brX / brC) / w, y: (brY / brC) / h },
                 { x: (blX / blC) / w, y: (blY / blC) / h }
             ];
-
             const topEdge = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
             const bottomEdge = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
             const leftEdge = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
             const rightEdge = Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y);
-
-            if (topEdge < 0.12 || bottomEdge < 0.12 || leftEdge < 0.12 || rightEdge < 0.12) {
-                return null;
-            }
-
+            if (topEdge < 0.12 || bottomEdge < 0.12 || leftEdge < 0.12 || rightEdge < 0.12) { return null; }
             return corners;
         }
 
-        // シャッター撮影処理（ハイブリッド通信＆自動再送キュー付き）
         function takeSnapshot() {
             const video = document.getElementById('cameraVideo');
             if (!video) return;
@@ -1139,13 +1025,9 @@
                 workCanvas.width = sw; workCanvas.height = sh;
                 workCtx.drawImage(srcCanvas, 0, 0, sw, sh);
                 normCorners = detectReceiptBlobAndCorners(workCtx, sw, sh) || [
-                    { x: 0.15, y: 0.12 },
-                    { x: 0.85, y: 0.12 },
-                    { x: 0.85, y: 0.88 },
-                    { x: 0.15, y: 0.88 }
+                    { x: 0.15, y: 0.12 }, { x: 0.85, y: 0.12 }, { x: 0.85, y: 0.88 }, { x: 0.15, y: 0.88 }
                 ];
             }
-
             const srcPts = normCorners.map(p => ({ x: p.x * vw, y: p.y * vh }));
             const flattened = warpAndOptimizeReceipt(srcCanvas, srcPts);
 
@@ -1159,9 +1041,7 @@
                 if (isMobileRemote) {
                     queueAndSendImageToPC(flattened, 'long', currentLongGroupId);
                     const previewEl = document.getElementById('mobileLastPreview');
-                    if (previewEl) {
-                        previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-amber-500/50">`;
-                    }
+                    if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-amber-500/50">`; }
                 } else {
                     addReceivedImageToStock(flattened, 'long', currentLongGroupId);
                 }
@@ -1173,9 +1053,7 @@
             if (isMobileRemote) {
                 queueAndSendImageToPC(flattened, 'normal', null);
                 const previewEl = document.getElementById('mobileLastPreview');
-                if (previewEl) {
-                    previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`;
-                }
+                if (previewEl) { previewEl.innerHTML = `<img src="${flattened}" class="w-full h-auto rounded border border-slate-700">`; }
             } else {
                 addReceivedImageToStock(flattened, 'normal', null);
             }
@@ -1186,20 +1064,13 @@
             const bottomW = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
             const leftH = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
             const rightH = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
-
             const avgW = Math.max(100, (topW + bottomW) / 2);
             const avgH = Math.max(100, (leftH + rightH) / 2);
-
             const outW = 580;
             const aspect = Math.min(3.5, Math.max(0.45, avgH / avgW));
             const outH = Math.round(outW * aspect);
 
-            const dstPts = [
-                { x: 0, y: 0 },
-                { x: outW - 1, y: 0 },
-                { x: outW - 1, y: outH - 1 },
-                { x: 0, y: outH - 1 }
-            ];
+            const dstPts = [{ x: 0, y: 0 }, { x: outW - 1, y: 0 }, { x: outW - 1, y: outH - 1 }, { x: 0, y: outH - 1 }];
             const H = computeHomography(dstPts, pts);
 
             const sCtx = srcCanvas.getContext('2d');
@@ -1207,14 +1078,12 @@
             const sw = srcCanvas.width, sh = srcCanvas.height;
 
             const outCanvas = document.createElement('canvas');
-            outCanvas.width = outW;
-            outCanvas.height = outH;
+            outCanvas.width = outW; outCanvas.height = outH;
             const oCtx = outCanvas.getContext('2d');
             const outImgData = oCtx.createImageData(outW, outH);
             const dstData = outImgData.data;
 
             let minLum = 255, maxLum = 0;
-
             for (let y = 0; y < outH; y++) {
                 for (let x = 0; x < outW; x++) {
                     const denom = H[6] * x + H[7] * y + 1;
@@ -1228,29 +1097,17 @@
                     const dx = Math.max(0, Math.min(1, sx - x0));
                     const dy = Math.max(0, Math.min(1, sy - y0));
 
-                    const i00 = (y0 * sw + x0) * 4;
-                    const i10 = (y0 * sw + x1) * 4;
-                    const i01 = (y1 * sw + x0) * 4;
-                    const i11 = (y1 * sw + x1) * 4;
-
-                    const w00 = (1 - dx) * (1 - dy);
-                    const w10 = dx * (1 - dy);
-                    const w01 = (1 - dx) * dy;
-                    const w11 = dx * dy;
+                    const i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4, i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4;
+                    const w00 = (1 - dx) * (1 - dy), w10 = dx * (1 - dy), w01 = (1 - dx) * dy, w11 = dx * dy;
 
                     const r = srcData[i00] * w00 + srcData[i10] * w10 + srcData[i01] * w01 + srcData[i11] * w11;
                     const g = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
                     const b = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
 
                     const dIdx = (y * outW + x) * 4;
-                    dstData[dIdx] = r;
-                    dstData[dIdx + 1] = g;
-                    dstData[dIdx + 2] = b;
-                    dstData[dIdx + 3] = 255;
-
+                    dstData[dIdx] = r; dstData[dIdx + 1] = g; dstData[dIdx + 2] = b; dstData[dIdx + 3] = 255;
                     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                    if (lum < minLum) minLum = lum;
-                    if (lum > maxLum) maxLum = lum;
+                    if (lum < minLum) minLum = lum; if (lum > maxLum) maxLum = lum;
                 }
             }
 
@@ -1262,7 +1119,6 @@
                     dstData[i + c] = v;
                 }
             }
-
             oCtx.putImageData(outImgData, 0, 0);
             return outCanvas.toDataURL('image/jpeg', 0.80);
         }
@@ -1345,6 +1201,9 @@
         function removeImage(idx) { receiptItems.splice(idx, 1); updateThumbnailUI(); }
         function clearImages() { receiptItems = []; updateThumbnailUI(); }
 
+        // =========================================================================
+        // 【アップデート箇所】最大3枚の同時並列処理で待機時間を劇的に短縮する機能
+        // =========================================================================
         async function analyzeReceipts() {
             if (currentLongGroupCount > 0) {
                 finishLongReceiptGroup();
@@ -1362,77 +1221,84 @@
             const workingItems = [...receiptItems];
             const total = workingItems.length;
             let failedIndices = [];
+            let completed = 0;
 
-            for (let i = 0; i < total; i++) {
-                const currentNum = i + 1;
-                const item = workingItems[i];
-                const isLongSet = item.images.length > 1 || item.mode === 'long';
+            if (loadingTitle) loadingTitle.textContent = "AI並列解析を実行中...";
+            if (progressBar) progressBar.style.width = `0%`;
+            if (progressCount) progressCount.textContent = `0 / ${total} 件完了`;
+            if (loadingText) loadingText.textContent = "複数枚を同時にスピードデータ化しています...";
 
-                if (loadingTitle) {
-                    loadingTitle.textContent = isLongSet
-                        ? `長尺レシート結合解析中 (${currentNum} / ${total}件目・${item.images.length}枚組)`
-                        : `高速AI解析中 (${currentNum} / ${total}件目)`;
-                }
-                const percent = Math.round((i / total) * 100);
-                if (progressBar) progressBar.style.width = `${percent}%`;
-                if (progressCount) progressCount.textContent = `${i} / ${total} 件完了`;
+            // 3枚同時に並列処理するワーカー（API制限を回避しつつ3倍速化）
+            const concurrencyLimit = 3;
+            let currentIndex = 0;
 
-                let success = false;
-                let attempts = 0;
-                const maxAttempts = 2;
+            const runWorker = async () => {
+                while (currentIndex < total) {
+                    const i = currentIndex++;
+                    const item = workingItems[i];
+                    const isLongSet = item.images.length > 1 || item.mode === 'long';
 
-                while (!success && attempts < maxAttempts) {
-                    attempts++;
-                    try {
-                        if (attempts > 1) {
-                            if (loadingText) loadingText.textContent = `予備モデルへ切り替えて再試行中...`;
-                            await new Promise(r => setTimeout(r, 800));
-                        } else {
-                            if (loadingText) loadingText.textContent = `${currentNum}件目をスピード解析しています...`;
-                        }
+                    let success = false;
+                    let attempts = 0;
+                    const maxAttempts = 2;
 
-                        const response = await fetch('/api/analyze', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                images: item.images,
-                                image: item.images[0],
-                                mode: isLongSet ? 'long' : 'normal'
-                            })
-                        });
-                        
-                        const rawText = await response.text();
-                        let resJson;
+                    while (!success && attempts < maxAttempts) {
+                        attempts++;
                         try {
-                            resJson = JSON.parse(rawText);
-                        } catch (e) {
-                            throw new Error("応答解析エラー");
-                        }
+                            const response = await fetch('/api/analyze', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    images: item.images,
+                                    image: item.images[0],
+                                    mode: isLongSet ? 'long' : 'normal'
+                                })
+                            });
+                            
+                            const rawText = await response.text();
+                            let resJson;
+                            try {
+                                resJson = JSON.parse(rawText);
+                            } catch (e) {
+                                throw new Error("応答解析エラー");
+                            }
 
-                        if (!response.ok) throw new Error(resJson.error || '解析失敗');
+                            if (!response.ok) throw new Error(resJson.error || '解析失敗');
 
-                        const rows = Array.isArray(resJson) ? resJson : [resJson];
-                        rows.forEach(r => {
-                            if (!Array.isArray(r.uncertain)) r.uncertain = [];
-                            receiptsData.unshift(r);
-                        });
-                        renderTable();
-                        success = true;
-                    } catch (err) {
-                        console.warn(`${currentNum}件目 試行 ${attempts}回目失敗:`, err.message);
-                        if (attempts >= maxAttempts) {
-                            failedIndices.push(i);
+                            const rows = Array.isArray(resJson) ? resJson : [resJson];
+                            rows.forEach(r => {
+                                if (!Array.isArray(r.uncertain)) r.uncertain = [];
+                                receiptsData.unshift(r);
+                            });
+                            success = true;
+                        } catch (err) {
+                            console.warn(`${i + 1}件目 試行 ${attempts}回目失敗:`, err.message);
+                            if (attempts >= maxAttempts) {
+                                failedIndices.push(i);
+                            } else {
+                                await new Promise(r => setTimeout(r, 600)); // リトライ前の短い待機
+                            }
                         }
                     }
-                }
 
-                if (i < total - 1) {
-                    await new Promise(r => setTimeout(r, 400));
+                    completed++;
+                    const percent = Math.round((completed / total) * 100);
+                    if (progressBar) progressBar.style.width = `${percent}%`;
+                    if (progressCount) progressCount.textContent = `${completed} / ${total} 件完了`;
+                    if (loadingText) loadingText.textContent = `${completed}件目のデータ化が完了しました`;
+                    
+                    // 解析が終わったものから随時画面のテーブルへ表示（リアルタイム反映）
+                    renderTable();
                 }
+            };
+
+            // ワーカーを上限まで同時起動して完了を待つ
+            const workers = [];
+            for (let w = 0; w < Math.min(concurrencyLimit, total); w++) {
+                workers.push(runWorker());
             }
+            await Promise.all(workers);
 
-            if (progressBar) progressBar.style.width = `100%`;
-            if (progressCount) progressCount.textContent = `${total} / ${total} 件完了`;
             if (loadingTitle) loadingTitle.textContent = "すべての解析が完了しました！";
             if (loadingText) loadingText.textContent = "赤枠・黄枠の項目がある場合はクリックしてご確認ください。";
 
@@ -1443,9 +1309,9 @@
                 updateThumbnailUI();
 
                 if (failedIndices.length > 0) {
-                    alert(`${failedIndices.length}件の解析に失敗しました（ストックに残っています）。再度お試しください。`);
+                    alert(`${failedIndices.length}件の解析に失敗しました（ストックに残っています）。時間をおいて再度お試しください。`);
                 }
-            }, 500);
+            }, 800);
         }
 
         function addRowManually() {

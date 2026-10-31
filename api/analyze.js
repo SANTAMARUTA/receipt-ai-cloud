@@ -25,8 +25,8 @@ export default async function handler(req, res) {
             }
         }
 
-        // 安定稼働する確実なモデル順序
-        const modelsToTry = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
+        // 無駄なリトライを省き、最速かつ高精度なモデルのみを直接指定
+        const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash"];
         let data = null;
         let lastError = null;
 
